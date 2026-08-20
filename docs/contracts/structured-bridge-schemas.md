@@ -13,7 +13,8 @@ Every payload has these fields:
   "source": "source-specific literal",
   "deliveryId": "stable producer idempotency key",
   "checkedAt": "ISO 8601 timestamp",
-  "changedKeys": ["bounded stable item keys"]
+  "changedKeys": ["bounded stable item keys"],
+  "summary": "optional short fallback for older OpenMaus runtimes"
 }
 ```
 

@@ -16,6 +16,7 @@ const COMMON = {
   deliveryId: ID,
   checkedAt: TIMESTAMP,
   changedKeys: z.array(ID).max(UI_LIMITS.bridgeItems),
+  summary: CONTENT.optional(),
 };
 
 export const OpsBridgePayloadSchema = z.object({
