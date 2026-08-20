@@ -1,18 +1,25 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
 
 const TODOIST_API = "https://api.todoist.com/api/v1";
-const ACTION_ID = z.string().min(1).max(200);
-const CompletionPayload = z.object({
-  threadId: z.string().min(1).max(200).refine((value) => value.trim() === value),
-  callId: z.string().min(1).max(200).refine((value) => value.trim() === value),
-  taskId: z.string().min(1).max(200).refine((value) => value.trim() === value),
-}).strict();
+const COMPLETION_FIELDS = new Set(["threadId", "callId", "taskId"]);
+
+function exactIdentifier(value) {
+  if (value?.constructor !== String || Object(value) === value) return null;
+  const text = String(value);
+  return text.length >= 1 && text.length <= 200 && text.trim() === text ? text : null;
+}
 
 export function parseTodoistCompletionPayload(value) {
-  const parsed = CompletionPayload.safeParse(value);
-  return parsed.success ? parsed.data : null;
+  if (value === null || Object(value) !== value || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) {
+    return null;
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== COMPLETION_FIELDS.size || keys.some((key) => !COMPLETION_FIELDS.has(key))) return null;
+  const threadId = exactIdentifier(value.threadId);
+  const callId = exactIdentifier(value.callId);
+  const taskId = exactIdentifier(value.taskId);
+  return threadId && callId && taskId ? { threadId, callId, taskId } : null;
 }
 
 export function resolveServerPort(value, fallback = 8799) {
@@ -43,7 +50,7 @@ export function completionKey({ threadId, callId, taskId }) {
 }
 
 export function appendTodoistCompletionReceipt(dataDir, payload, at = new Date().toISOString()) {
-  const actionId = ACTION_ID.safeParse(payload.actionId);
+  const actionId = exactIdentifier(payload.actionId);
   mkdirSync(dataDir, { recursive: true });
   appendFileSync(
     join(dataDir, "ui-actions.ndjson"),
@@ -52,7 +59,7 @@ export function appendTodoistCompletionReceipt(dataDir, payload, at = new Date()
       kind: "complete-accepted",
       threadId: payload.threadId,
       callId: payload.callId,
-      actionId: actionId.success ? actionId.data : undefined,
+      actionId: actionId ?? undefined,
       name: "show_todoist_tasks",
       taskId: payload.taskId,
       ok: true,
