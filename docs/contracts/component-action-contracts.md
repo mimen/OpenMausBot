@@ -41,14 +41,14 @@ The executable event schema is `ComponentActionEventSchema` in `server/ui/contra
 
 No credential, remote-write token, Electron secret, MCP bearer, or action capability may enter this event.
 
-Terminal events are injected once per provider instance into resumed or replayed context in chronological batches of at most 24. A default `ui_action` continuation runs once per thread batch with the selected model and effort, but only the private compiled UI tools are mounted. Completed actions are consumed and cannot execute again without a separately verified retry claim. Follow-up dispatch has three bounded attempts.
+Terminal events are injected once per provider instance into resumed or replayed context in chronological batches of at most 24. A default `ui_action` continuation runs once per thread batch with the selected model and effort, but only the private compiled UI tools are mounted. Completed actions are consumed and cannot execute again without a separately verified retry claim. Follow-up dispatch has three bounded attempts. A claimed follow-up schedules a wake at its lease expiry, including after restart. Room follow-ups are marked dispatched only after a successful provider turn; unavailable, stalled, or failed room turns release the claim into the retry path.
 
 ## Todoist completion
 
 - Action name: `complete_task`.
 - Idempotency key: `todoist:{threadId}:{callId}:complete:{canonicalTaskId}`.
 - External write owner: Electron main only.
-- The server durably claims the action before Electron may call Todoist.
+- The server durably claims the action, then re-reads Todoist and requires the remote recurring flag and due value to match the exact shown occurrence before Electron may call Todoist.
 - A live started or failed lease, or a succeeded key, never licenses another remote close. A failed action keeps a 30-second ambiguity window. After expiry, a started or failed key can be reclaimed only when completed-task history is negative and read-only Todoist checks prove the task is still active and, for recurring tasks, still on the shown occurrence.
 - Electron's successful close response is the immediate authority. Completed-task history settles a crash-before-report recovery without re-executing the close.
 - Recurring tasks store the shown due date and recurring flag. Recovery may settle from completed-task history or an advanced due occurrence. It never retries the close on ambiguity.

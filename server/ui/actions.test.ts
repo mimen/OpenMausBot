@@ -16,6 +16,7 @@ import {
   failTodoistAction,
   recoverStartedSupplementActions,
   recoverStartedTodoistActions,
+  supplementLedgerSnapshot,
   toggleSupplementItem,
   type ComponentActionContext,
 } from "./actions.ts";
@@ -66,7 +67,7 @@ function todoistClient(task: TodoistTaskView, completed = false): TodoistClient 
   };
 }
 
-function todoistComponent(): Message {
+function todoistComponent(taskOverrides: Partial<TodoistTaskView> = {}): Message {
   return {
     id: "component-1",
     at: Date.now(),
@@ -86,6 +87,7 @@ function todoistComponent(): Message {
           due: "2026-08-21",
           recurring: false,
           unavailable: false,
+          ...taskOverrides,
         }],
       },
       result: "shown",
@@ -95,7 +97,7 @@ function todoistComponent(): Message {
   };
 }
 
-function supplementComponent(): Message {
+function supplementComponent(checked = false): Message {
   return {
     id: "supplement-1",
     at: Date.now(),
@@ -110,7 +112,7 @@ function supplementComponent(): Message {
         date: "2026-08-20",
         timeZone: "America/Los_Angeles",
         regimen: { version: "v1", snapshotAt: "2026-08-20T12:00:00Z", source: "Protocol" },
-        groups: [{ period: "pm", items: [{ id: "magnesium", label: "Magnesium", checked: false }] }],
+        groups: [{ period: "pm", items: [{ id: "magnesium", label: "Magnesium", checked }] }],
       },
       result: "shown",
       status: "shown",
@@ -192,6 +194,31 @@ describe("trusted component actions", () => {
     expect(actionEventsForThread("thread-1")[0]?.execution.attempt).toBe(3);
   });
 
+  it("fences a recurring close to the exact shown occurrence", async () => {
+    const store = memoryStore([todoistComponent({ recurring: true })]);
+    const client = todoistClient(todoistTask({ recurring: false }));
+    const result = await beginTodoistAction(
+      { threadId: "thread-1", callId: "call-1", taskId: "task-1" },
+      context(store, client),
+    );
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("recurrence") });
+    expect(actionEventsForThread("thread-1")[0]).toMatchObject({ status: "failed" });
+  });
+
+  it("reconciles an advanced recurring due date without authorizing the new occurrence", async () => {
+    const store = memoryStore([todoistComponent({ recurring: true })]);
+    const client = todoistClient(todoistTask({ recurring: true, due: "2026-08-22" }));
+    const result = await beginTodoistAction(
+      { threadId: "thread-1", callId: "call-1", taskId: "task-1" },
+      context(store, client),
+    );
+
+    expect(result).toEqual({ ok: false, error: "That shown Todoist occurrence is already completed." });
+    expect(actionEventsForThread("thread-1")[0]).toMatchObject({ status: "succeeded", trustedOrigin: "recovery" });
+    expect(store.messages[0]?.component?.arguments).toMatchObject({ tasks: [{ due: "2026-08-21", isCompleted: true }] });
+  });
+
   it("settles a trusted Electron success once, patches the component, and appends one activity", async () => {
     const store = memoryStore([todoistComponent()]);
     const ctx = context(store, todoistClient(todoistTask()));
@@ -239,6 +266,22 @@ describe("trusted component actions", () => {
     expect(actionEventsForThread("thread-1")).toHaveLength(1);
   });
 
+  it("persists an uncheck from a hydrated checked supplement", () => {
+    const store = memoryStore([supplementComponent(true)]);
+    const result = toggleSupplementItem({
+      actionId: "5f034d4e-f38b-4f7e-b302-bf8f54489774",
+      threadId: "thread-1",
+      callId: "supplement-call",
+      itemId: "magnesium",
+      date: "2026-08-20",
+      checked: false,
+    }, context(store, todoistClient(todoistTask())));
+
+    expect(result).toMatchObject({ ok: true, value: { checked: false, changed: true } });
+    expect(supplementLedgerSnapshot("2026-08-20", "v1").get("magnesium")).toBe(false);
+    expect(store.messages[0]?.component?.arguments).toMatchObject({ groups: [{ items: [{ checked: false }] }] });
+  });
+
   it("recovers a committed local ledger write after restart without applying it twice", () => {
     const store = memoryStore([supplementComponent()]);
     const ctx = context(store, todoistClient(todoistTask()));
@@ -277,6 +320,20 @@ describe("trusted component actions", () => {
     expect(actionEventsForThread("thread-1")[0]?.status).toBe("succeeded");
     expect(store.messages.filter((message) => message.kind === "activity")).toHaveLength(1);
     expect(store.messages[0]?.component?.arguments).toMatchObject({ groups: [{ items: [{ checked: true }] }] });
+  });
+
+  it("recovers an advanced recurring occurrence without closing the new due date", async () => {
+    const store = memoryStore([todoistComponent({ recurring: true })]);
+    const client = todoistClient(todoistTask({ recurring: true }));
+    const ctx = context(store, client);
+    const claim = await beginTodoistAction({ threadId: "thread-1", callId: "call-1", taskId: "task-1" }, ctx);
+    if (!claim.ok) throw new Error(claim.error);
+    client.getTask.mockResolvedValue({ ok: true, value: todoistTask({ recurring: true, due: "2026-08-22" }) });
+
+    await recoverStartedTodoistActions(ctx);
+
+    expect(actionEventsForThread("thread-1")[0]).toMatchObject({ status: "succeeded", trustedOrigin: "recovery" });
+    expect(store.messages[0]?.component?.arguments).toMatchObject({ tasks: [{ due: "2026-08-21", isCompleted: true }] });
   });
 
   it("recovers a close from completed-task history without re-executing it", async () => {

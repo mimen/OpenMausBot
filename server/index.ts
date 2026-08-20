@@ -119,6 +119,7 @@ import {
 } from "./ui/actions.ts";
 import { UiAccessRegistry } from "./ui/access.ts";
 import { BoundedJsonObjectSchema } from "./ui/contract.ts";
+import { createFollowUpWakeScheduler, futureFollowUpClaimExpiry } from "./ui/follow-up-scheduler.ts";
 import { generativeUiSystemPrompt, isUiToolTitle } from "./ui/gallery.ts";
 import { UiCallCorrelation } from "./ui/correlation.ts";
 import { showComponent } from "./ui/show.ts";
@@ -698,6 +699,7 @@ const watchdog = new TurnWatchdog({
         if (activeVpsThreads.get(currentBot.id) === turn.threadId) activeVpsThreads.delete(currentBot.id);
         store.setActivity(currentBot.id, "idle");
       }
+      scheduleUiActionFollowUps();
     }, 6_000);
     release.unref?.();
   },
@@ -1813,21 +1815,22 @@ async function startTurn(
   })();
 }
 
-let uiActionFollowUpScheduled = false;
+const uiActionFollowUpWake = createFollowUpWakeScheduler(() => drainUiActionFollowUps());
 
-function scheduleUiActionFollowUps(): void {
-  if (uiActionFollowUpScheduled) return;
-  uiActionFollowUpScheduled = true;
-  setTimeout(() => {
-    uiActionFollowUpScheduled = false;
-    drainUiActionFollowUps();
-  }, 0).unref?.();
+function scheduleUiActionFollowUps(at = Date.now()): void {
+  uiActionFollowUpWake.schedule(at);
+}
+
+function scheduleClaimExpiry(event: ReturnType<typeof claimFollowUp>): void {
+  const at = futureFollowUpClaimExpiry(event?.followUp.claimedUntil, Date.now());
+  if (at !== null) scheduleUiActionFollowUps(at);
 }
 
 function drainUiActionFollowUps(): void {
   const candidates = pendingActionFollowUps();
   const visitedThreads = new Set<string>();
   for (const event of candidates) {
+    if (event.followUp.status === "claimed") scheduleClaimExpiry(event);
     if (visitedThreads.has(event.threadId)) continue;
     visitedThreads.add(event.threadId);
     const batch = candidates.filter((candidate) => candidate.threadId === event.threadId).slice(0, 24);
@@ -1836,6 +1839,7 @@ function drainUiActionFollowUps(): void {
     if (!owner || owner.busy || group?.busyBotId) continue;
     const claimed = claimFollowUp(event.actionId, new Date());
     if (!claimed) continue;
+    scheduleClaimExpiry(claimed);
     const prompt = uiActionFollowUpPrompt(batch);
     const markBatchDispatched = () => {
       const at = new Date();
@@ -1847,9 +1851,9 @@ function drainUiActionFollowUps(): void {
     };
     if (group) {
       void runGroupMemberTurn(group.id, owner.id, 0, new Set(), prompt, true)
-        .then((dispatched) => {
-          if (dispatched) markBatchDispatched();
-          else releaseClaim("The room follow-up did not dispatch.");
+        .then((result) => {
+          if (result.kind === "succeeded") markBatchDispatched();
+          else releaseClaim(result.error);
         })
         .catch((error) => releaseClaim(error instanceof Error ? error.message : String(error)));
       continue;
@@ -1934,6 +1938,16 @@ const groupQueues = new Map<string, Promise<void>>();
 const GROUP_CONTEXT_MESSAGES = 30;
 const MAX_GROUP_HOPS = 1;
 
+type GroupMemberTurnResult =
+  | { kind: "succeeded" }
+  | { kind: "unavailable"; error: string }
+  | { kind: "failed"; error: string }
+  | { kind: "stalled"; error: string };
+
+function roomTurnCanContinue(result: GroupMemberTurnResult): boolean {
+  return result.kind !== "stalled";
+}
+
 function serializeRoomContext(threadId: string, userName: string): string {
   return store
     .messagesFor(threadId)
@@ -1982,34 +1996,36 @@ async function runGroupMemberTurn(
   spoken: Set<string> = new Set(),
   connectorContinuation?: string,
   uiActionContinuation = false,
-): Promise<boolean> {
+): Promise<GroupMemberTurnResult> {
   const group = store.group(groupId);
   const bot = store.bot(botId);
-  if (!group || !bot) return false;
+  if (!group || !bot) return { kind: "unavailable", error: "The room or room member is unavailable." };
   spoken.add(botId);
   const instance = registry.get(bot.modelSelection.instanceId);
   const userName = cfg.profile?.name?.trim() || "User";
   if (!instance) {
+    const error = `${bot.name}'s model is unavailable`;
     store.appendMessage(group.threadId, {
       role: "bot",
       kind: "activity",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      tool: { name: `error: ${bot.name}'s model is unavailable`, ok: false },
+      tool: { name: `error: ${error}`, ok: false },
     });
-    return true;
+    return { kind: "unavailable", error };
   }
   // One turn per bot at a time, across BOTH engines. Without this a bot
   // could run its 1:1 turn and a room turn concurrently — two provider
   // processes, interleaved token spend, and an interrupt that only ever
   // reached one of them.
   if (bot.busy) {
+    const error = `${bot.name} is busy in another conversation`;
     store.appendMessage(group.threadId, {
       role: "bot",
       kind: "activity",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      tool: { name: `${bot.name} is busy in another conversation — skipped this round`, ok: false },
+      tool: { name: `${error} — skipped this round`, ok: false },
     });
-    return true;
+    return { kind: "unavailable", error };
   }
   const integrations: NonNullable<Parameters<typeof instance.adapter.sendTurn>[0]["integrations"]> = {};
   const selectedSkills = uiActionContinuation
@@ -2036,13 +2052,14 @@ async function runGroupMemberTurn(
       integrations.ui = uiIntegration(bot.id, group.threadId, instance.driverKind, instance.instanceId);
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     store.appendMessage(group.threadId, {
       role: "bot",
       kind: "activity",
       from: { botId: bot.id, name: bot.name, color: bot.color },
-      tool: { name: `error: connected apps are unavailable — ${error instanceof Error ? error.message : String(error)}`, ok: false },
+      tool: { name: `error: connected apps are unavailable — ${message}`, ok: false },
     });
-    return true;
+    return { kind: "unavailable", error: `Connected apps are unavailable: ${message}` };
   }
   store.setActivity(bot.id, "working");
 
@@ -2094,13 +2111,27 @@ async function runGroupMemberTurn(
   // run the turn and wait for it to settle, folding the reply text so a
   // chained @mention can be routed afterwards
   let replyText = "";
+  let providerError = "The room provider turn failed.";
+  let roomTurnSucceeded = false;
+  let dispatchedTurnId: string | undefined;
+  let actionDeliveryRecorded = false;
+  const recordUiActionDelivery = () => {
+    if (actionDeliveryRecorded || !roomTurnSucceeded || !dispatchedTurnId || roomActionEvents.length === 0) return;
+    markActionEventsDelivered(
+      roomActionEvents.map((event) => event.actionId),
+      roomDeliveryCursor,
+      new Date().toISOString(),
+      dispatchedTurnId,
+    );
+    actionDeliveryRecorded = true;
+  };
   const timeoutMinutes = roomTurnTimeoutMinutes(cfg);
-  const outcome = await new Promise<"settled" | "dispatch_failed" | "stalled" | "timed_out">((resolve) => {
+  const outcome = await new Promise<"settled" | "turn_failed" | "dispatch_failed" | "stalled" | "timed_out">((resolve) => {
     let done = false;
     let timer!: ReturnType<typeof setTimeout>;
     let unsub = () => {};
     let unregisterStall = () => {};
-    const finish = (value: "settled" | "dispatch_failed" | "stalled" | "timed_out") => {
+    const finish = (value: "settled" | "turn_failed" | "dispatch_failed" | "stalled" | "timed_out") => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -2111,7 +2142,12 @@ async function runGroupMemberTurn(
     unsub = bus.subscribe((e: RuntimeEvent) => {
       if (e.threadId !== group.threadId) return;
       if (e.type === "item.completed" && e.itemType === "assistant_text") replyText += `\n${e.text}`;
-      else if (e.type === "turn.completed") finish("settled");
+      else if (e.type === "turn.completed") {
+        roomTurnSucceeded = e.ok;
+        if (e.ok) recordUiActionDelivery();
+        else providerError = "The room provider turn completed unsuccessfully.";
+        finish(e.ok ? "settled" : "turn_failed");
+      }
     });
     timer = scheduleRoomTurnTimeout(timeoutMinutes, () => {
       void instance.adapter.interruptTurn(group.threadId).catch(() => {});
@@ -2135,7 +2171,10 @@ async function runGroupMemberTurn(
         ...memberTurnSelection(bot.modelSelection),
       })
       .then((dispatched) => {
-        if (roomActionEvents.length) {
+        if (uiActionContinuation) {
+          dispatchedTurnId = dispatched.turnId;
+          recordUiActionDelivery();
+        } else if (roomActionEvents.length) {
           markActionEventsDelivered(
             roomActionEvents.map((event) => event.actionId),
             roomDeliveryCursor,
@@ -2145,11 +2184,12 @@ async function runGroupMemberTurn(
         }
       })
       .catch((err) => {
+        providerError = err instanceof Error ? err.message : String(err);
         store.appendMessage(group.threadId, {
           role: "bot",
           kind: "activity",
           from: { botId: bot.id, name: bot.name, color: bot.color },
-          tool: { name: `error: ${err instanceof Error ? err.message.slice(0, 140) : "turn failed"}`, ok: false },
+          tool: { name: `error: ${providerError.slice(0, 140)}`, ok: false },
         });
         watchdog.settle(group.threadId);
         finish("dispatch_failed");
@@ -2158,7 +2198,9 @@ async function runGroupMemberTurn(
   // A timed-out provider still owns the room thread until its interrupt
   // produces turn.completed (or the stall watchdog's grace fallback runs).
   // Do not clear busy or start the next member on that same thread early.
-  if (outcome === "stalled" || outcome === "timed_out") return false;
+  if (outcome === "stalled" || outcome === "timed_out") {
+    return { kind: "stalled", error: outcome === "timed_out" ? "The room provider turn timed out." : "The room provider turn stalled." };
+  }
   // turn.completed normally performs this cleanup. Only use the fallback
   // when this invocation still owns the room; otherwise it would emit a
   // duplicate group frame or clear a newer speaker's state.
@@ -2175,10 +2217,11 @@ async function runGroupMemberTurn(
       .filter((b): b is NonNullable<typeof b> => Boolean(b) && b!.id !== bot.id);
     for (const next of roomResponders(replyText, members, { kind: "mentions" })) {
       if (spoken.has(next.id)) continue;
-      if (!(await runGroupMemberTurn(groupId, next.id, hop + 1, spoken))) return false;
+      const chained = await runGroupMemberTurn(groupId, next.id, hop + 1, spoken);
+      if (!roomTurnCanContinue(chained)) return chained;
     }
   }
-  return true;
+  return outcome === "settled" ? { kind: "succeeded" } : { kind: "failed", error: providerError };
 }
 
 function startGroupTurn(groupId: string, text: string) {
@@ -2215,7 +2258,8 @@ function startGroupTurn(groupId: string, text: string) {
     const spoken = new Set<string>();
     for (const responder of responders) {
       if (spoken.has(responder.id)) continue;
-      if (!(await runGroupMemberTurn(groupId, responder.id, 0, spoken))) break;
+      const result = await runGroupMemberTurn(groupId, responder.id, 0, spoken);
+      if (!roomTurnCanContinue(result)) break;
     }
   });
   groupQueues.set(groupId, next.catch(() => {}));
@@ -4341,6 +4385,7 @@ server.listen(PORT, "127.0.0.1", () => {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
+    uiActionFollowUpWake.stop();
     localVmIdle.cancel();
     watchdog.stop();
     routines?.stop();

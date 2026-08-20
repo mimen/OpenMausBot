@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { Json } from "../contracts.ts";
-import { BoundedJsonObjectSchema, type JsonSchema } from "./contract.ts";
+import { BoundedJsonObjectSchema, UI_LIMITS, type JsonSchema } from "./contract.ts";
 import { EventBridgePayloadSchema, OpsBridgePayloadSchema, OwedBridgePayloadSchema } from "./bridge.ts";
 import { GALLERY, generativeUiSystemPrompt, privateUiTools } from "./gallery.ts";
 import { COMPILED_COMPONENT_SCHEMAS } from "./schemas.ts";
@@ -88,6 +88,72 @@ describe("structured bridge readiness", () => {
         nextMove: "Decide.",
       }],
     }).success).toBe(true);
+  });
+
+  it("rejects field-valid payloads whose authoritative JSON exceeds the model-turn bridge budget", () => {
+    const content = "x".repeat(UI_LIMITS.content);
+    const ops = {
+      version: 1,
+      kind: "ops_status",
+      source: "ops-watch",
+      deliveryId: "ops-large",
+      checkedAt: "2026-08-20T12:00:00Z",
+      changedKeys: [],
+      standingOpenCount: 30,
+      findings: Array.from({ length: 30 }, (_, index) => ({
+        id: `finding-${index}`,
+        group: "still_open",
+        label: `Finding ${index}`,
+        severity: "warning",
+        evidence: content,
+      })),
+    } as const;
+    const owed = {
+      version: 1,
+      kind: "owed_conversations",
+      source: "inbox-closer",
+      deliveryId: "owed-large",
+      checkedAt: "2026-08-20T12:00:00Z",
+      changedKeys: [],
+      standingOpenCount: 8,
+      conversations: Array.from({ length: 8 }, (_, index) => ({
+        id: `chat-${index}`,
+        contact: `Contact ${index}`,
+        surface: "imessage",
+        age: "2h",
+        stakes: "high",
+        owner: "Milad",
+        owedReason: content,
+        bubbles: [{ id: `message-${index}`, direction: "inbound", text: content, at: "2026-08-20T11:00:00Z" }],
+        draft: { body: "d".repeat(8_000), status: "draft" },
+        nextMove: content,
+      })),
+    } as const;
+    const events = {
+      version: 1,
+      kind: "event_portfolio",
+      source: "event-watch:coordinator",
+      deliveryId: "events-large",
+      checkedAt: "2026-08-20T12:00:00Z",
+      changedKeys: [],
+      standingOpenCount: 30,
+      events: Array.from({ length: 30 }, (_, index) => ({
+        eventId: `event-${index}`,
+        slug: `event-${index}`,
+        title: `Event ${index}`,
+        doorsAt: "2026-08-22T21:00:00-07:00",
+        timeZone: "America/Los_Angeles",
+        health: "watch",
+        blockers: [{ id: `blocker-${index}`, label: `Blocker ${index}`, status: "open", evidence: content }],
+        draftReadyLinks: [],
+        nextMove: content,
+      })),
+    } as const;
+
+    expect(new TextEncoder().encode(JSON.stringify(ops)).byteLength).toBeGreaterThan(UI_LIMITS.bridgePayloadBytes);
+    expect(OpsBridgePayloadSchema.safeParse(ops).success).toBe(false);
+    expect(OwedBridgePayloadSchema.safeParse(owed).success).toBe(false);
+    expect(EventBridgePayloadSchema.safeParse(events).success).toBe(false);
   });
 
   it("accepts exact bounded Owed and Event facts", () => {

@@ -19,7 +19,6 @@ import { SupplementStackSchema } from "./schemas.ts";
 import {
   applyTrustedTodoistCompletion,
   findComponentCall,
-  reconcileTodoistCompletion,
   todoistCompletionCandidate,
   type CompletionInput,
   type ShowContext,
@@ -99,6 +98,37 @@ type TodoistReconciliation =
   | { kind: "active"; task: TodoistTaskView }
   | { kind: "ambiguous"; error: string };
 
+function dueInstant(value: string): number | null {
+  const parsed = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00.000Z` : value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function reconcileTodoistTask(
+  event: ComponentActionEvent,
+  task: TodoistTaskView,
+): TodoistReconciliation {
+  if (task.isCompleted) return { kind: "completed" };
+  const expectedRecurring = BOOLEAN.safeParse(event.entity.recurring);
+  if (!expectedRecurring.success || (task.recurring === true) !== expectedRecurring.data) {
+    return { kind: "ambiguous", error: "The task recurrence no longer matches the shown Todoist row." };
+  }
+  if (!expectedRecurring.data) return { kind: "active", task };
+
+  const shownDue = z.union([STRING, z.null()]).safeParse(event.entity.shownDue);
+  if (!shownDue.success) {
+    return { kind: "ambiguous", error: "The shown recurring occurrence has no reliable due value." };
+  }
+  if (task.due === shownDue.data) return { kind: "active", task };
+  if (shownDue.data && task.due) {
+    const shownAt = dueInstant(shownDue.data);
+    const activeAt = dueInstant(task.due);
+    if (shownAt !== null && activeAt !== null && activeAt > shownAt) {
+      return { kind: "completed" };
+    }
+  }
+  return { kind: "ambiguous", error: "The recurring task no longer matches the shown occurrence." };
+}
+
 async function reconcileTodoistOutcome(
   event: ComponentActionEvent,
   client: TodoistClient,
@@ -109,13 +139,7 @@ async function reconcileTodoistOutcome(
     if (history.value) return { kind: "completed" };
   }
   const active = await client.getTask(String(event.entity.id ?? ""));
-  if (!active.ok) return { kind: "ambiguous", error: active.error };
-  if (active.value.isCompleted) return { kind: "completed" };
-  const shownDue = STRING.safeParse(event.entity.shownDue);
-  if (event.entity.recurring === true && (!shownDue.success || active.value.due !== shownDue.data)) {
-    return { kind: "ambiguous", error: "The recurring task changed after the action attempt." };
-  }
-  return { kind: "active", task: active.value };
+  return active.ok ? reconcileTodoistTask(event, active.value) : { kind: "ambiguous", error: active.error };
 }
 
 export async function beginTodoistAction(
@@ -181,17 +205,26 @@ export async function beginTodoistAction(
     if (failed.ok) appendActivity(ctx, failed.value, `Could not complete “${taskLabel}” in Todoist`, false, candidate.value.found.message.from);
     return { ok: false, error: remote.error };
   }
-  if (remote.value.isCompleted) {
-    await reconcileTodoistCompletion(input, ctx);
-    const recovered = terminalEvent(
+  const authorization = reconcileTodoistTask(claimed.value.event, remote.value);
+  if (authorization.kind === "completed") {
+    const recovered = await completeTodoistAction(
+      { ...input, actionId: claimed.value.event.actionId },
       ctx,
-      claimed.value.event,
-      "succeeded",
-      boundedActionResult(`“${taskLabel}” was already completed in Todoist.`),
       "recovery",
     );
-    if (recovered.ok) appendActivity(ctx, recovered.value, `Already completed “${taskLabel}” in Todoist`, true, candidate.value.found.message.from);
-    return { ok: false, error: "That task is already completed in Todoist." };
+    if (!recovered.ok) return recovered;
+    return { ok: false, error: "That shown Todoist occurrence is already completed." };
+  }
+  if (authorization.kind === "ambiguous") {
+    const failed = terminalEvent(
+      ctx,
+      claimed.value.event,
+      "failed",
+      boundedActionResult(`Todoist could not authorize the shown occurrence of “${taskLabel}”.`, authorization.error),
+      "electron_main",
+    );
+    if (failed.ok) appendActivity(ctx, failed.value, `Could not authorize “${taskLabel}” in Todoist`, false, candidate.value.found.message.from);
+    return { ok: false, error: authorization.error };
   }
   return { ok: true, value: { actionId: claimed.value.event.actionId, taskId: candidate.value.taskId } };
 }

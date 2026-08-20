@@ -11,6 +11,7 @@ import {
   createOrGetActionEvent,
   markActionEventsDelivered,
   markFollowUpDispatched,
+  pendingActionFollowUps,
   readSupplementLedger,
   unreadActionEvents,
   writeSupplementLedger,
@@ -131,7 +132,14 @@ describe("component action SQLite store", () => {
         closeMessageDb();
       }
     }
+    expect(pendingActionFollowUps().map((event) => event.actionId)).toContain(BASE_EVENT.actionId);
     expect(claimFollowUp(BASE_EVENT.actionId, new Date("2026-08-20T13:00:00.000Z"))).toBeNull();
+    expect(actionEventsForThread(BASE_EVENT.threadId)[0]?.followUp).toMatchObject({
+      status: "failed",
+      attempt: 3,
+      error: expect.stringContaining("final follow-up claim expired"),
+    });
+    expect(pendingActionFollowUps()).toEqual([]);
   });
 
   it("marks dispatched follow-ups terminally", () => {

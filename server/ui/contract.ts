@@ -27,6 +27,7 @@ export const UI_LIMITS = {
   argumentsBytes: 128 * 1024,
   actionPublicBytes: 16 * 1024,
   actionDeliveries: 24,
+  bridgePayloadBytes: 44 * 1024,
   bridgeItems: 100,
   depth: 12,
 } as const;

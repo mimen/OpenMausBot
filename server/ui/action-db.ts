@@ -370,7 +370,8 @@ export function pendingActionFollowUps(limit = 100): ComponentActionEvent[] {
   // SAFETY: this query selects only non-null TEXT columns declared in db().
   const rows = db().prepare(
     "SELECT action_id, idempotency_key, thread_id, json FROM component_action_events " +
-      "WHERE status <> 'started' AND follow_up_status <> 'dispatched' AND follow_up_attempt < 3 " +
+      "WHERE status <> 'started' AND follow_up_status <> 'dispatched' " +
+      "AND (follow_up_attempt < 3 OR follow_up_status = 'claimed') " +
       "ORDER BY rowid DESC LIMIT ?",
   ).all(boundedLimit) as StoredActionRow[];
   return rows.flatMap((row) => {
@@ -417,17 +418,24 @@ export function markActionEventsDelivered(
 
 export function claimFollowUp(actionId: string, now: Date, leaseMs = 30_000): ComponentActionEvent | null {
   const current = actionEventById(actionId);
-  if (
-    !current ||
-    current.status === "started" ||
-    current.followUp.status === "dispatched" ||
-    current.followUp.attempt >= 3
-  ) return null;
-  if (
-    current.followUp.status === "claimed" &&
-    current.followUp.claimedUntil &&
-    Date.parse(current.followUp.claimedUntil) > now.getTime()
-  ) return null;
+  if (!current || current.status === "started" || current.followUp.status === "dispatched") return null;
+  const claimIsLive = current.followUp.status === "claimed" &&
+    current.followUp.claimedUntil !== undefined &&
+    Date.parse(current.followUp.claimedUntil) > now.getTime();
+  if (claimIsLive) return null;
+  if (current.followUp.attempt >= 3) {
+    if (current.followUp.status === "claimed") {
+      updateActionEvent(actionId, {
+        updatedAt: now.toISOString(),
+        followUp: {
+          status: "failed",
+          attempt: current.followUp.attempt,
+          error: "The final follow-up claim expired before a provider turn succeeded.",
+        },
+      });
+    }
+    return null;
+  }
   const updated = updateActionEvent(actionId, {
     updatedAt: now.toISOString(),
     followUp: {

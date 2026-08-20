@@ -23,6 +23,7 @@ Bounds:
 - IDs and timestamps: 1 to 200 characters.
 - `changedKeys`: at most 100 entries.
 - Free text fields use the component transcript limits in `server/ui/contract.ts`.
+- The complete authoritative JSON payload must serialize to at most 45,056 UTF-8 bytes, leaving room below the 48 KB model-turn ceiling for the bridge primer. Validated JSON is delivered whole and is never truncated.
 - Extra fields are rejected.
 
 ## Ops Watch payload

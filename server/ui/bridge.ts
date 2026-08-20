@@ -19,6 +19,24 @@ const COMMON = {
   summary: CONTENT.optional(),
 };
 
+type BridgeEnvelope = {
+  version: 1;
+  deliveryId: string;
+  checkedAt: string;
+  changedKeys: string[];
+  summary?: string;
+};
+
+function enforceBridgeBytes(value: BridgeEnvelope, context: z.RefinementCtx): void {
+  const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+  if (bytes > UI_LIMITS.bridgePayloadBytes) {
+    context.addIssue({
+      code: "custom",
+      message: `structured bridge payload exceeds ${UI_LIMITS.bridgePayloadBytes} serialized bytes`,
+    });
+  }
+}
+
 export const OpsBridgePayloadSchema = z.object({
   ...COMMON,
   kind: z.literal("ops_status"),
@@ -29,7 +47,7 @@ export const OpsBridgePayloadSchema = z.object({
     group: z.enum(["resolved", "new", "awaiting", "still_open", "healthy"]),
   }).strict()).max(UI_LIMITS.bridgeItems),
   quietState: z.object({ label: LABEL, detail: CONTENT.optional() }).strict().optional(),
-}).strict();
+}).strict().superRefine(enforceBridgeBytes);
 
 export const OwedConversationSchema = z.object({
   id: ID,
@@ -54,7 +72,7 @@ export const OwedBridgePayloadSchema = z.object({
   standingOpenCount: z.number().int().min(0).max(100_000),
   conversations: z.array(OwedConversationSchema).max(UI_LIMITS.bridgeItems),
   coverageGaps: z.array(CONTENT).max(20).optional(),
-}).strict();
+}).strict().superRefine(enforceBridgeBytes);
 
 export const EventPortfolioItemSchema = z.object({
   eventId: ID,
@@ -79,7 +97,7 @@ export const EventBridgePayloadSchema = z.object({
   source: z.literal("event-watch:coordinator"),
   standingOpenCount: z.number().int().min(0).max(100_000),
   events: z.array(EventPortfolioItemSchema).max(UI_LIMITS.bridgeItems),
-}).strict();
+}).strict().superRefine(enforceBridgeBytes);
 
 export const StructuredBridgePayloadSchema = z.discriminatedUnion("kind", [
   OpsBridgePayloadSchema,
