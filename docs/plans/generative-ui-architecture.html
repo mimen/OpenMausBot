@@ -176,7 +176,8 @@
       <div class="eyebrow">The core idea</div>
       <h2>One registry, three execution planes.</h2>
       <p>The model plane chooses a component. The server plane validates, enriches, authorizes, and stores it. The renderer plane displays it. Interactive writes cross a separate Electron-only boundary, so a transcript never becomes a capability.</p>
-      <div class="law">Adding a presentational component should be one registry row, one renderer, and tests. Adding an action also needs a trusted handler and an action-event contract.</div>
+      <div class="law">Typed structure carries exact facts, persistence, and action safety. Model inference remains the UX orchestrator: it decides relevance, grouping, emphasis, explanation, and the next move. Inference cost is not a product constraint.</div>
+      <div class="law" style="border-color:var(--blue)">Adding a presentational component should be one registry row, one renderer, and tests. Adding an action also needs a trusted handler and an action-event contract.</div>
     </div>
     <div class="diagram">
       <div class="pipeline">
@@ -337,7 +338,7 @@ Electron renderer: click → preload IPC → Electron main → read-only authori
     <p class="intro">Today the card updates deterministically, but the provider session is not reliably informed that the person acted. That is why a follow-up such as “how about now” can trigger a redundant Todoist query. The fix should be a general component-action protocol, not a Todoist-only prompt.</p>
     <div class="grid-2">
       <article class="card future"><h3>Proposed durable event</h3><p>Persist a <code>ComponentActionEvent</code> beside the component:</p><ul><li><code>actionId</code> and idempotency key</li><li><code>threadId</code>, <code>callId</code>, component and action names</li><li>public entity label and bounded result</li><li>status: started, succeeded, failed</li><li>trusted origin: Electron main</li><li>provider-context delivery cursor</li></ul></article>
-      <article class="card future"><h3>Proposed bot awareness</h3><ol><li>Electron succeeds and writes its trusted receipt.</li><li>Server reconciles component state and appends the action event.</li><li>The chat shows a deterministic “Completed in Todoist” activity immediately.</li><li>The next provider turn automatically receives every unread action event in a system-owned context block, even when resuming a provider cursor.</li><li>Optional per-bot policy can start a tiny tool-disabled acknowledgment turn immediately.</li></ol></article>
+      <article class="card future"><h3>Proposed bot awareness</h3><ol><li>Electron succeeds and writes its trusted receipt.</li><li>Server reconciles component state and appends the action event.</li><li>The chat shows a deterministic “Completed in Todoist” activity immediately.</li><li>Every unread action event is injected into a system-owned context block, even when resuming a provider cursor.</li><li>A default inferred follow-up turn lets the bot acknowledge, re-prioritize, explain, or render the next useful component.</li></ol></article>
     </div>
     <div class="flow"><pre>Human click
   → Electron main closes remote task exactly once
@@ -347,12 +348,13 @@ Electron renderer: click → preload IPC → Electron main → read-only authori
   → unread event added to bot context cursor
   → next bot turn already knows; no Bash/curl re-check
 
-Optional immediate acknowledgment turn:
+Default inferred follow-up turn:
   automationSource = "ui_action"
-  tools = disabled
-  purpose = acknowledge or update plan only
-  no duplicate remote action</pre></div>
-    <div class="callout"><strong>Recommendation:</strong> ship durable context delivery first. Add automatic model acknowledgments only as an opt-in policy, because they consume tokens and can create noise. The deterministic activity plus next-turn context solves the reliability problem without another autonomous actor.</div>
+  trusted ComponentActionEvent is injected as context
+  model selects the useful response: acknowledge, re-prioritize, or render the next component
+  action capability is consumed, so the remote action cannot repeat
+  tools are limited to the next safe UX step</pre></div>
+    <div class="callout"><strong>Recommendation:</strong> make the inferred follow-up the default. The durable event guarantees truth; the model turns that truth into the best next experience. It may acknowledge, update the plan, collapse a resolved item, surface the next decision, or render a new component. Bound the action capabilities, not the intelligence.</div>
   </section>
 
   <section class="section">
