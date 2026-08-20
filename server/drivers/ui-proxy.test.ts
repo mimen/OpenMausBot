@@ -16,6 +16,9 @@ const ShowBody = z.object({
   threadId: z.string().optional(),
   name: z.string().optional(),
   arguments: z.object({ taskIds: z.array(z.string()).optional() }).optional(),
+  provider: z.string().optional(),
+  providerInstanceId: z.string().optional(),
+  providerCallId: z.string().optional(),
 });
 const RpcResultSchema = z.object({
   id: z.number().optional(),
@@ -75,6 +78,8 @@ beforeAll(async () => {
       OMB_BOT_ID: "bot-ui",
       OMB_THREAD_ID: "thread-ui",
       OMB_COMMS_TOKEN: TOKEN,
+      OMB_PROVIDER: "codex",
+      OMB_PROVIDER_INSTANCE_ID: "codex-default",
     },
     stdio: ["pipe", "pipe", "inherit"],
   });
@@ -121,6 +126,9 @@ describe("ui-proxy MCP surface", () => {
       threadId: "thread-ui",
       name: "show_todoist_tasks",
       arguments: { taskIds: ["6hJCfm66Hh5Q4wqv"] },
+      provider: "codex",
+      providerInstanceId: "codex-default",
+      providerCallId: expect.any(String),
     });
   });
 });

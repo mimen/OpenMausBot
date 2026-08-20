@@ -90,6 +90,10 @@ declare global {
         name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "todoistToken" | "ttsKey",
         value: string,
       ): Promise<ConfigStatus>;
+      /** Electron-only trusted Todoist write seam. */
+      todoist?: {
+        complete(payload: { threadId: string; callId: string; taskId: string }): Promise<{ ok: true; taskId: string }>;
+      };
       /** In-app auto-update (packaged app only; dormant in dev). onState
        * fires immediately with the current state, then on transitions. */
       updater?: {

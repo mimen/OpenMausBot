@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { redactSecrets } from "../redact.ts";
+import { ComponentOriginSchema, type ComponentOrigin } from "./contract.ts";
 
 export type UiActionKind = "shown" | "complete-accepted" | "complete-rejected";
 
@@ -15,6 +16,7 @@ export type UiActionRow = {
   taskId?: string;
   ok: boolean;
   detail: string;
+  origin?: ComponentOrigin;
 };
 
 const UiAction = z.object({
@@ -26,6 +28,7 @@ const UiAction = z.object({
   taskId: z.string().optional(),
   ok: z.boolean(),
   detail: z.string(),
+  origin: ComponentOriginSchema.optional(),
 });
 const FILE_NAME = "ui-actions.ndjson";
 

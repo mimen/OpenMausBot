@@ -28,6 +28,7 @@ import {
   type LifecycleAction,
 } from "./container-computer.ts";
 import {
+  configPatchNeedsProviderReload,
   ensureDirs,
   instanceConfigs,
   loadConfig,
@@ -93,15 +94,29 @@ import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 import { loadBundledSkills, renderSkillInstructions, selectBundledSkills } from "./skill-library.ts";
 import { shouldMountLocalComputer } from "./local-routing.ts";
 import { isUiToolTitle } from "./ui/gallery.ts";
-import { completeTodoistTask, showComponent, type ShowContext } from "./ui/show.ts";
-import { liveTodoistClient } from "./ui/todoist.ts";
+import { UiCallCorrelation } from "./ui/correlation.ts";
+import { authorizeTodoistCompletion, reconcileTodoistCompletion, showComponent, type ShowContext } from "./ui/show.ts";
+import { capturedTodoistToken, liveTodoistClient, validateTodoistToken } from "./ui/todoist.ts";
 
-const COMPLETE_TODOIST_REQUEST = z.object({
-  threadId: z.string(),
-  callId: z.string(),
-  taskId: z.string(),
-  actionToken: z.string(),
+const INTERNAL_UI_SHOW_REQUEST = z.object({
+  botId: z.string().min(1).max(200),
+  threadId: z.string().min(1).max(200),
+  name: z.string().min(1).max(80),
+  arguments: z.record(z.string(), z.json()),
+  provider: z.string().min(1).max(200),
+  providerInstanceId: z.string().min(1).max(200).optional(),
+  providerCallId: z.string().min(1).max(200).optional(),
 }).strict();
+
+const TODOIST_COMPLETION_REQUEST = z.object({
+  threadId: z.string().min(1).max(200),
+  callId: z.string().min(1).max(200),
+  taskId: z.string().min(1).max(200),
+}).strict();
+
+// Capture before registry.load or any diagnostic/provider child can spawn.
+// The token remains only in this module's private memory from this point on.
+const ENV_TODOIST_TOKEN = capturedTodoistToken();
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -119,6 +134,8 @@ const MIME: Record<string, string> = {
 
 ensureDirs();
 const cfg = loadConfig();
+let privateTodoistToken = ENV_TODOIST_TOKEN ?? cfg.todoist?.token?.trim() ?? null;
+if (cfg.todoist) delete cfg.todoist.token;
 const registry = new ProviderRegistry(BUILT_IN_DRIVERS);
 await registry.load(instanceConfigs(cfg));
 const bundledSkills = loadBundledSkills();
@@ -167,7 +184,7 @@ function agentsIntegration(botId: string, threadId: string, depth: number) {
   };
 }
 
-function uiIntegration(botId: string, threadId: string) {
+function uiIntegration(botId: string, threadId: string, provider: string, providerInstanceId: string) {
   return {
     command: process.execPath,
     args: [uiProxyPath],
@@ -177,6 +194,8 @@ function uiIntegration(botId: string, threadId: string) {
       OMB_BOT_ID: botId,
       OMB_THREAD_ID: threadId,
       OMB_COMMS_TOKEN: COMMS_TOKEN,
+      OMB_PROVIDER: provider,
+      OMB_PROVIDER_INSTANCE_ID: providerInstanceId,
     },
   };
 }
@@ -265,7 +284,8 @@ let bootSelection = { instanceId: "", model: "" };
 const store = new Store(() => bootSelection);
 bootSelection = await defaultSelection();
 store.seedIfEmpty();
-const todoistClient = liveTodoistClient();
+const todoistClient = liveTodoistClient(() => privateTodoistToken);
+const uiCorrelation = new UiCallCorrelation();
 function uiContext(): ShowContext {
   return { store, publish: (event) => bus.publish(event), dataDir: DATA_DIR, todoist: todoistClient };
 }
@@ -699,6 +719,8 @@ bus.subscribe((event: RuntimeEvent) => {
   }
   broadcast({ kind: "runtime", event });
   routines?.handleRuntimeEvent(event);
+  if (event.type === "item.started") uiCorrelation.record(event);
+  if (event.type === "turn.completed" || event.type === "session.exited") uiCorrelation.settle(event.threadId);
   const bot = store.botByThread(event.threadId);
   const group = bot ? undefined : store.groupByThread(event.threadId);
   if (!bot && !group) return;
@@ -1581,7 +1603,7 @@ async function startTurn(
         integrations.agents = agentsIntegration(bot.id, threadId, commsDepth);
       }
       if (instance.adapter.capabilities.uiMcp === true) {
-        integrations.ui = uiIntegration(bot.id, threadId);
+        integrations.ui = uiIntegration(bot.id, threadId, instance.driverKind, instance.instanceId);
       }
       // @mentions in the user's message (the composer's tagging UI) become
       // an explicit delegation nudge — the agent still does the ask_bot call
@@ -1840,7 +1862,7 @@ async function runGroupMemberTurn(
       if (connection) integrations.composio = connection;
     }
     if (instance.adapter.capabilities.uiMcp === true) {
-      integrations.ui = uiIntegration(bot.id, group.threadId);
+      integrations.ui = uiIntegration(bot.id, group.threadId, instance.driverKind, instance.instanceId);
     }
   } catch (error) {
     store.appendMessage(group.threadId, {
@@ -2180,6 +2202,15 @@ function stderrOf(err: unknown): string {
   return typeof s === "string" ? s : Buffer.isBuffer(s) ? s.toString("utf8") : "";
 }
 
+function refreshConfigInMemory(todoistOverride?: string): void {
+  const loaded = loadConfig();
+  const storedTodoist = loaded.todoist?.token?.trim();
+  if (todoistOverride !== undefined) privateTodoistToken = todoistOverride.trim() || null;
+  else if (storedTodoist) privateTodoistToken = storedTodoist;
+  if (loaded.todoist) delete loaded.todoist.token;
+  Object.assign(cfg, loaded);
+}
+
 function configStatus() {
   return {
     xai: { configured: Boolean(cfg.xai?.key) },
@@ -2190,7 +2221,7 @@ function configStatus() {
     box: { configured: Boolean(cfg.box?.token) },
     vps: { configured: Boolean(vpsSshAlias(cfg)), sshAlias: vpsSshAlias(cfg) ?? "" },
     opencodeGo: { configured: Boolean(cfg.opencodeGo?.apiKey) },
-    todoist: { configured: Boolean(cfg.todoist?.token) },
+    todoist: { configured: Boolean(privateTodoistToken) },
     // the chosen voice is a setting, not a secret; the key is reported the
     // same configured-or-not way as every other credential
     tts: tts.describeVoice(cfg),
@@ -2513,23 +2544,28 @@ const server = createServer(async (req, res) => {
         return json(res, 405, { error: "method not allowed" });
       }
       if (method === "POST" && path === "/api/internal/ui/show") {
-        const body = await readBody(req);
-        const botId = String(body.botId ?? "");
-        const threadId = String(body.threadId ?? "");
-        const name = String(body.name ?? "");
-        const componentArguments = z.json().safeParse(body.arguments ?? {});
-        if (!componentArguments.success) return json(res, 400, { error: "component arguments must be JSON" });
+        const parsed = INTERNAL_UI_SHOW_REQUEST.safeParse(await readBody(req));
+        if (!parsed.success) return json(res, 400, { error: "invalid component show request" });
+        const { botId, threadId, name, arguments: componentArguments, provider, providerInstanceId, providerCallId } = parsed.data;
         const bot = store.bot(botId);
         if (!bot) return json(res, 403, { error: "unknown component caller" });
         const group = store.groupByThread(threadId);
         const ownsThread = Boolean(store.taskByThread(botId, threadId)) || Boolean(group?.memberIds.includes(botId));
         if (!ownsThread) return json(res, 403, { error: "component caller does not own this thread" });
+        const origin = await uiCorrelation.claim({
+          threadId,
+          name,
+          arguments: componentArguments,
+          provider,
+          providerInstanceId,
+          providerCallId,
+        });
         const shown = await showComponent(
           {
             threadId,
             name,
-            arguments: componentArguments.data,
-            provider: "ui",
+            arguments: componentArguments,
+            origin,
             from: group ? { botId: bot.id, name: bot.name, color: bot.color } : undefined,
           },
           uiContext(),
@@ -3661,10 +3697,17 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR) });
     }
 
-    if (method === "POST" && path === "/api/ui/todoist/complete") {
-      const body = COMPLETE_TODOIST_REQUEST.safeParse(await readBody(req));
-      if (!body.success) return json(res, 400, { error: "threadId, callId, taskId, and actionToken must be exact strings" });
-      const completed = await completeTodoistTask(body.data, uiContext());
+    if (method === "POST" && path === "/api/ui/todoist/authorize") {
+      const body = TODOIST_COMPLETION_REQUEST.safeParse(await readBody(req));
+      if (!body.success) return json(res, 400, { error: "threadId, callId, and taskId must be exact strings" });
+      const authorized = await authorizeTodoistCompletion(body.data, uiContext());
+      if (!authorized.ok) return json(res, 400, { error: authorized.error });
+      return json(res, 200, { ok: true, taskId: authorized.value.taskId });
+    }
+    if (method === "POST" && path === "/api/ui/todoist/reconcile-completion") {
+      const body = TODOIST_COMPLETION_REQUEST.safeParse(await readBody(req));
+      if (!body.success) return json(res, 400, { error: "threadId, callId, and taskId must be exact strings" });
+      const completed = await reconcileTodoistCompletion(body.data, uiContext());
       if (!completed.ok) return json(res, 400, { error: completed.error });
       return json(res, 200, { ok: true, taskId: completed.value.taskId });
     }
@@ -3765,7 +3808,7 @@ const server = createServer(async (req, res) => {
         // saveConfig({instances}) merge would re-derive defaults identically,
         // but writing the resolved map keeps disk and runtime in lockstep
         saveConfig({ instances: result.config.instances });
-        Object.assign(cfg, loadConfig());
+        refreshConfigInMemory();
         await reloadProviders();
         // rescan BEFORE describe(): the response's cliCandidates are computed
         // from the memoized PATH, so resetting after would answer this request
@@ -3826,6 +3869,11 @@ const server = createServer(async (req, res) => {
         const check = await tts.verifyKey(newTts.key.trim());
         if (!check.ok) return json(res, 400, { error: check.message });
       }
+      const newTodoistToken = patch.todoist?.token;
+      if (newTodoistToken?.trim()) {
+        const check = await validateTodoistToken(newTodoistToken.trim());
+        if (!check.ok) return json(res, 400, { error: check.error });
+      }
       const externalSecretStorage = url.searchParams.get("secretStorage") === "external";
       if (externalSecretStorage) {
         // The packaged Electron caller commits supplied credentials to the
@@ -3842,22 +3890,19 @@ const server = createServer(async (req, res) => {
         if (persisted.todoist?.token !== undefined) persisted.todoist.token = "";
         saveConfig(persisted);
         syncCredentialEnv(patch);
-        Object.assign(cfg, loadConfig());
+        refreshConfigInMemory(newTodoistToken);
       } else {
         saveConfig(patch);
         // loadConfig prefers env over the file for credentials, so the env
         // must follow the save — otherwise the value injected at boot would
         // shadow the new key until the next launch
         syncCredentialEnv(patch);
-        Object.assign(cfg, loadConfig());
+        refreshConfigInMemory(newTodoistToken);
       }
       // Provider keys change the fleet. Profile, voice, VPS, and room timeout
       // changes do not rebuild it: no driver reads them, and they should not
       // interrupt in-flight turns.
-      const reloadKeys = Object.keys(patch).filter(
-        (key) => key !== "profile" && key !== "tts" && key !== "vps" && key !== "rooms",
-      );
-      if (reloadKeys.length > 0) await reloadProviders();
+      if (configPatchNeedsProviderReload(patch)) await reloadProviders();
       const status = configStatus();
       broadcast({ kind: "config", ...status });
       return json(res, 200, status);

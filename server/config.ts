@@ -92,6 +92,12 @@ export interface AppConfig {
 }
 export type ConfigPatch = z.output<typeof appConfigPatchSchema>;
 
+export function configPatchNeedsProviderReload(patch: ConfigPatch): boolean {
+  return Object.keys(patch).some(
+    (key) => key !== "profile" && key !== "tts" && key !== "todoist" && key !== "vps" && key !== "rooms",
+  );
+}
+
 export function parseStoredConfig(value: JsonValue): AppConfig {
   const parsed = appConfigSchema.safeParse(value);
   if (!parsed.success) throw new Error(schemaIssue(parsed.error, "Invalid stored configuration"));
@@ -162,13 +168,11 @@ export function loadConfig(): AppConfig {
   return cfg;
 }
 
-/** After saveConfig() writes a credential, the running process's env must
- * follow the newest value — loadConfig() prefers env, so the secret injected
- * at boot would otherwise shadow the save until relaunch: the UI would show
- * "saved" while every turn still used the old key. An empty string means the
- * user cleared the credential, so the var is dropped and the (now empty)
- * file value is authoritative again. Fields absent from the patch are
- * untouched. */
+/** After saveConfig() writes a provider/voice credential, the running
+ * process's env follows the newest value because loadConfig() prefers env.
+ * Todoist is deliberately excluded: server/index.ts holds it in private
+ * memory so no child can inherit it from process.env. An empty string drops
+ * the applicable env var. Fields absent from the patch are untouched. */
 export function syncCredentialEnv(patch: Partial<AppConfig>): void {
   const secrets: Array<[value: string | undefined, name: string]> = [
     [patch.xai?.key, "XAI_API_KEY"],
@@ -176,7 +180,6 @@ export function syncCredentialEnv(patch: Partial<AppConfig>): void {
     [patch.box?.token, "BOX_TOKEN"],
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
     [patch.tts?.key, "OMB_TTS_KEY"],
-    [patch.todoist?.token, "TODOIST_API_TOKEN"],
   ];
   for (const [value, name] of secrets) {
     if (value === undefined) continue;

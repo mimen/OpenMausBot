@@ -19,6 +19,24 @@ describe("validateArgs", () => {
     expect(extra.ok).toBe(false);
   });
 
+  it("rejects oversized strings and row collections before rendering", () => {
+    const record = GALLERY_BY_NAME.get("show_record_card")!.parameters;
+    expect(validateArgs(record, {
+      title: "x".repeat(201),
+      fields: [],
+    }).ok).toBe(false);
+    expect(validateArgs(record, {
+      title: "Bounded",
+      fields: Array.from({ length: 51 }, (_, index) => ({ label: `Field ${index}`, value: "v" })),
+    }).ok).toBe(false);
+
+    const checklist = GALLERY_BY_NAME.get("show_checklist")!.parameters;
+    expect(validateArgs(checklist, {
+      title: "Bounded",
+      items: Array.from({ length: 101 }, (_, index) => ({ text: `Item ${index}`, done: false })),
+    }).ok).toBe(false);
+  });
+
   it("requires exact Todoist task ids as strings", () => {
     const schema = GALLERY_BY_NAME.get("show_todoist_tasks")!.parameters;
     expect(validateArgs(schema, { taskIds: ["6hJCfm66Hh5Q4wqv"] }).ok).toBe(true);

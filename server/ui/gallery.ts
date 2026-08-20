@@ -1,4 +1,4 @@
-import type { GallerySpec } from "./contract.ts";
+import { UI_LIMITS, type GallerySpec } from "./contract.ts";
 
 const tone = {
   type: "string" as const,
@@ -19,20 +19,21 @@ export const GALLERY: GallerySpec[] = [
       additionalProperties: false,
       required: ["title", "fields"],
       properties: {
-        title: { type: "string", description: "What this record is, e.g. a person or an order" },
-        subtitle: { type: "string", description: "One line of context under the title" },
-        status: { type: "string", description: "A short status word, e.g. Approved" },
+        title: { type: "string", maxLength: UI_LIMITS.title, description: "What this record is, e.g. a person or an order" },
+        subtitle: { type: "string", maxLength: UI_LIMITS.subtitle, description: "One line of context under the title" },
+        status: { type: "string", maxLength: UI_LIMITS.label, description: "A short status word, e.g. Approved" },
         statusTone: tone,
         fields: {
           type: "array",
           description: "The fields, in the order they should be read",
+          maxItems: UI_LIMITS.recordRows,
           items: {
             type: "object",
             additionalProperties: false,
             required: ["label", "value"],
             properties: {
-              label: { type: "string" },
-              value: { type: "string", description: "Already formatted for a person to read" },
+              label: { type: "string", maxLength: UI_LIMITS.label },
+              value: { type: "string", maxLength: UI_LIMITS.value, description: "Already formatted for a person to read" },
             },
           },
         },
@@ -51,20 +52,20 @@ export const GALLERY: GallerySpec[] = [
       additionalProperties: false,
       required: ["title", "metrics"],
       properties: {
-        title: { type: "string", description: "What these figures are about" },
-        caption: { type: "string" },
+        title: { type: "string", maxLength: UI_LIMITS.title, description: "What these figures are about" },
+        caption: { type: "string", maxLength: UI_LIMITS.subtitle },
         metrics: {
           type: "array",
-          maxItems: 6,
+          maxItems: UI_LIMITS.metricsRows,
           description: "Up to six figures. More than that wanted a table.",
           items: {
             type: "object",
             additionalProperties: false,
             required: ["label", "value"],
             properties: {
-              label: { type: "string" },
-              value: { type: "string", description: "Already formatted, including any unit or currency" },
-              change: { type: "string", description: "The movement, e.g. '+12% on last month'" },
+              label: { type: "string", maxLength: UI_LIMITS.label },
+              value: { type: "string", maxLength: UI_LIMITS.value, description: "Already formatted, including any unit or currency" },
+              change: { type: "string", maxLength: UI_LIMITS.subtitle, description: "The movement, e.g. '+12% on last month'" },
               changeTone: tone,
             },
           },
@@ -84,19 +85,20 @@ export const GALLERY: GallerySpec[] = [
       additionalProperties: false,
       required: ["title", "items"],
       properties: {
-        title: { type: "string", description: "What this list is" },
-        caption: { type: "string" },
+        title: { type: "string", maxLength: UI_LIMITS.title, description: "What this list is" },
+        caption: { type: "string", maxLength: UI_LIMITS.subtitle },
         items: {
           type: "array",
           description: "The items, in the order they should be done",
+          maxItems: UI_LIMITS.checklistRows,
           items: {
             type: "object",
             additionalProperties: false,
             required: ["text", "done"],
             properties: {
-              text: { type: "string" },
+              text: { type: "string", maxLength: UI_LIMITS.content },
               done: { type: "boolean", description: "Whether this one is already finished" },
-              note: { type: "string", description: "A short aside, e.g. who it is waiting on" },
+              note: { type: "string", maxLength: UI_LIMITS.subtitle, description: "A short aside, e.g. who it is waiting on" },
             },
           },
         },
@@ -115,13 +117,15 @@ export const GALLERY: GallerySpec[] = [
       additionalProperties: false,
       required: ["quote", "attribution"],
       properties: {
-        quote: { type: "string", description: "The quotation itself, without surrounding quote marks" },
+        quote: { type: "string", maxLength: UI_LIMITS.value, description: "The quotation itself, without surrounding quote marks" },
         attribution: {
           type: "string",
+          maxLength: UI_LIMITS.subtitle,
           description: "Who said or wrote it, e.g. 'Grace Hopper' or 'the 2026 annual report'",
         },
         context: {
           type: "string",
+          maxLength: UI_LIMITS.subtitle,
           description: "One short line of context: where it is from, or why it matters here",
         },
       },
@@ -139,13 +143,13 @@ export const GALLERY: GallerySpec[] = [
       additionalProperties: false,
       required: ["taskIds"],
       properties: {
-        title: { type: "string", description: "What this list is, e.g. Today's tasks" },
+        title: { type: "string", maxLength: UI_LIMITS.title, description: "What this list is, e.g. Today's tasks" },
         taskIds: {
           type: "array",
           minItems: 1,
-          maxItems: 25,
+          maxItems: UI_LIMITS.todoistRows,
           description: "One to 25 exact Todoist task IDs to display. IDs must match the tasks exactly, with no surrounding whitespace.",
-          items: { type: "string" },
+          items: { type: "string", minLength: 1, maxLength: UI_LIMITS.providerIdentity },
         },
       },
     },
@@ -158,9 +162,15 @@ export const GALLERY_BY_NAME: ReadonlyMap<string, GallerySpec> = new Map(GALLERY
 
 export const UI_TOOL_NAMES: ReadonlySet<string> = new Set(GALLERY.map((spec) => spec.name));
 
+export function uiToolNameFromTitle(title: string | undefined): string | null {
+  if (!title) return null;
+  if (UI_TOOL_NAMES.has(title)) return title;
+  const prefix = "mcp__ui__";
+  if (!title.startsWith(prefix)) return null;
+  const name = title.slice(prefix.length);
+  return UI_TOOL_NAMES.has(name) ? name : null;
+}
+
 export function isUiToolTitle(title: string | undefined): boolean {
-  if (!title) return false;
-  if (UI_TOOL_NAMES.has(title)) return true;
-  const bare = title.includes("__") ? title.slice(title.lastIndexOf("__") + 2) : title;
-  return title.includes("mcp__ui__") || UI_TOOL_NAMES.has(bare);
+  return uiToolNameFromTitle(title) !== null;
 }

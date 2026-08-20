@@ -1,0 +1,43 @@
+{
+  "capturedAt": "2026-08-20T13:38:09.486Z",
+  "source": "current Store replay over a copy of the isolated SQLite evidence database",
+  "component": {
+    "callId": "6225a85c-1b41-495d-8ff5-7a62562ddb1b",
+    "name": "show_todoist_tasks",
+    "arguments": {
+      "title": "OpenMaus UI test tasks",
+      "tasks": [
+        {
+          "id": "6hJCfm66Hh5Q4wqv",
+          "content": "[OpenMaus UI test] Complete me from component A",
+          "isCompleted": true,
+          "url": null,
+          "due": null,
+          "unavailable": false
+        },
+        {
+          "id": "6hJCfmGxJHcvjQRM",
+          "content": "[OpenMaus UI test] Complete me from component B",
+          "isCompleted": false,
+          "url": null,
+          "due": null,
+          "unavailable": false
+        }
+      ]
+    },
+    "result": "The Todoist tasks are now on screen for the person. Completing a task requires them to click; showing them did not complete anything.",
+    "status": "shown",
+    "origin": {
+      "provider": "legacy"
+    }
+  },
+  "capabilityScan": {
+    "actionToken": false,
+    "ombuiPrefix": false
+  },
+  "screenshots": [
+    "docs/screenshots/generative-ui/03-task-a-completed.png",
+    "docs/screenshots/generative-ui/04-replayed-after-restart.png",
+    "docs/screenshots/generative-ui/05-accessible-replay.png"
+  ]
+}

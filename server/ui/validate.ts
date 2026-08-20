@@ -19,6 +19,12 @@ function check(schema: JsonSchema, value: Json, path: string): Result<Json, stri
   if (schema.type === "string") {
     const parsed = STRING.safeParse(value);
     if (!parsed.success) return { ok: false, error: `${path} must be a string` };
+    if (schema.minLength !== undefined && parsed.data.length < schema.minLength) {
+      return { ok: false, error: `${path} has at least ${schema.minLength} character${schema.minLength === 1 ? "" : "s"}` };
+    }
+    if (schema.maxLength !== undefined && parsed.data.length > schema.maxLength) {
+      return { ok: false, error: `${path} has at most ${schema.maxLength} characters` };
+    }
     if (schema.enum && !schema.enum.includes(parsed.data)) {
       return { ok: false, error: `${path} must be one of ${schema.enum.join(", ")}` };
     }

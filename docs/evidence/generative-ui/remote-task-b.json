@@ -1,0 +1,9 @@
+{
+  "capturedAt": "2026-08-20T13:38:09.486Z",
+  "source": "GET https://api.todoist.com/api/v1/tasks/6hJCfmGxJHcvjQRM",
+  "task": {
+    "id": "6hJCfmGxJHcvjQRM",
+    "content": "[OpenMaus UI test] Complete me from component B",
+    "checked": false
+  }
+}

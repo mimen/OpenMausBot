@@ -17,15 +17,19 @@ export function ChecklistCard({
     <UiFrame
       action={
         <UiBadge tone={done === items.length && items.length > 0 ? "positive" : "neutral"}>
-          {done} of {items.length}
+          {done} of {items.length} completed
         </UiBadge>
       }
       caption={caption}
       title={title}
     >
-      <ul className="space-y-2">
+      <p className="sr-only" role="status" aria-live="polite">
+        {done} of {items.length} checklist items completed.
+      </p>
+      <ul className="space-y-2" aria-busy="false" aria-label={`${done} of ${items.length} checklist items completed`}>
         {items.map((item) => (
           <li className="flex items-start gap-2.5 text-[13px]" key={item.text}>
+            <span className="sr-only">{item.done ? "Completed: " : "Not completed: "}</span>
             <span
               aria-hidden="true"
               className={

@@ -92,6 +92,22 @@ writeFileSync(
   ].join("\n"),
 );
 
+const removedCompletionStatuses = new Map();
+if (listening) {
+  for (const route of ["complete", "record-completion"]) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/ui/todoist/${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ threadId: "extracted", callId: "extracted", taskId: "extracted", actionToken: "extracted" }),
+      });
+      removedCompletionStatuses.set(route, response.status);
+    } catch {
+      removedCompletionStatuses.set(route, 0);
+    }
+  }
+}
+
 let proxyReport = null;
 try {
   const { stdout } = await promisify(execFile)(process.execPath, [probe], { cwd: staging });
@@ -109,6 +125,12 @@ if (!listening) {
   process.exit(1);
 }
 
+for (const [route, status] of removedCompletionStatuses) {
+  if (status === 404) continue;
+  console.error(`removed Todoist completion endpoint ${route} returned ${status}; expected 404`);
+  process.exit(1);
+}
+
 if (!proxyReport || proxyReport.error || proxyReport.missing.length > 0) {
   console.error("spawned proxy paths do not resolve inside the packaged server dir:");
   console.error(JSON.stringify(proxyReport, null, 2));
@@ -119,4 +141,5 @@ if (!proxyReport || proxyReport.error || proxyReport.missing.length > 0) {
 
 const count = Object.keys(proxyReport.resolved).length;
 console.log(`packaged server started with no node_modules in reach (port ${port}) ✓`);
+console.log(`transcript-token and unauthenticated receipt endpoints are absent (404) ✓`);
 console.log(`all ${count} spawned proxy paths resolve inside the packaged server dir ✓`);

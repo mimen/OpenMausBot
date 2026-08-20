@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  configPatchNeedsProviderReload,
   DATA_DIR,
   instanceConfigs,
   isValidSshAlias,
@@ -20,6 +21,12 @@ import {
 } from "./config.ts";
 
 describe("configuration boundaries", () => {
+  it("does not reload providers for a Todoist-only save", () => {
+    expect(configPatchNeedsProviderReload({ todoist: { token: "validated" } })).toBe(false);
+    expect(configPatchNeedsProviderReload({ todoist: { token: "validated" }, profile: { name: "Ada" } })).toBe(false);
+    expect(configPatchNeedsProviderReload({ xai: { key: "provider-key" } })).toBe(true);
+  });
+
   it("keeps supported stored settings and drops unrelated top-level data", () => {
     expect(
       parseStoredConfig({
@@ -301,5 +308,12 @@ describe("workspace credential env strip", () => {
     // consumed in-process (Computer driver / voice module), never by a CLI
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("BOX_TOKEN");
     expect(WORKSPACE_CREDENTIAL_ENV).toContain("OMB_TTS_KEY");
+    expect(WORKSPACE_CREDENTIAL_ENV).toContain("TODOIST_API_TOKEN");
+  });
+
+  it("never reintroduces Todoist into process.env on a mid-session save", () => {
+    delete process.env.TODOIST_API_TOKEN;
+    syncCredentialEnv({ todoist: { token: "private-memory-only" } });
+    expect(process.env.TODOIST_API_TOKEN).toBeUndefined();
   });
 });

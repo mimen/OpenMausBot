@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-08-20T13:38:09.486Z",
+  "historical": true,
+  "source": "isolated ui-actions.ndjson from the pre-hardening run",
+  "action": {
+    "at": "2026-08-20T11:07:34.355Z",
+    "kind": "complete-accepted",
+    "threadId": "2cf7d460-8743-432e-9918-9073fd7c415c",
+    "callId": "6225a85c-1b41-495d-8ff5-7a62562ddb1b",
+    "name": "show_todoist_tasks",
+    "taskId": "6hJCfm66Hh5Q4wqv",
+    "ok": true
+  },
+  "provenance": "This proves only that the earlier application recorded a successful action-path result. It does not exercise the hardened Electron IPC path or independently establish who initiated the renderer request.",
+  "currentFlowCoverage": [
+    "electron/todoist-completion.test.mjs",
+    "server/ui/show.test.ts",
+    "server/ui/replay.test.ts"
+  ]
+}

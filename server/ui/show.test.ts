@@ -7,7 +7,7 @@ import type { JsonObject, RuntimeEvent } from "../contracts.ts";
 import type { Message } from "../store.ts";
 import type { TodoistTaskView } from "./contract.ts";
 import { readUiActions } from "./evidence.ts";
-import { completeTodoistTask, showComponent, type ShowStore } from "./show.ts";
+import { authorizeTodoistCompletion, reconcileTodoistCompletion, showComponent, type ShowStore } from "./show.ts";
 import type { TodoistClient } from "./todoist.ts";
 
 const dirs: string[] = [];
@@ -40,25 +40,30 @@ function memoryStore(): ShowStore & { threads: Map<string, Message[]> } {
   };
 }
 
-function fakeTodoist(tasks: Map<string, TodoistTaskView>, closed: string[]): TodoistClient {
+function fakeTodoist(tasks: Map<string, TodoistTaskView>): TodoistClient {
   return {
     async getTask(taskId) {
       const task = tasks.get(taskId);
       if (!task) return { ok: false, error: `missing ${taskId}` };
       return { ok: true, value: task };
     },
-    async closeTask(taskId) {
-      if (!tasks.has(taskId)) return { ok: false, error: `missing ${taskId}` };
-      closed.push(taskId);
-      return { ok: true, value: true };
+    async closeTask() {
+      throw new Error("server completion must never call Todoist close");
     },
   };
 }
 
-describe("showComponent / completeTodoistTask", () => {
-  it("persists a record card and never talks to Todoist", async () => {
+const origin = {
+  provider: "claudeAgent",
+  providerInstanceId: "claude",
+  turnId: "turn-1",
+  itemId: "toolu-1",
+  providerCallId: "rpc-1",
+} as const;
+
+describe("showComponent / Todoist desktop authorization", () => {
+  it("persists provider-native call identity and never talks to Todoist for an ordinary card", async () => {
     const store = memoryStore();
-    const closed: string[] = [];
     const events: RuntimeEvent[] = [];
     const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
     dirs.push(dataDir);
@@ -67,35 +72,57 @@ describe("showComponent / completeTodoistTask", () => {
         threadId: "t1",
         name: "show_record_card",
         arguments: { title: "Order", fields: [{ label: "Total", value: "$12" }] },
+        origin,
       },
-      {
-        store,
-        publish: (event) => events.push(event),
-        dataDir,
-        todoist: fakeTodoist(new Map(), closed),
-        token: () => "ombui_test",
-      },
+      { store, publish: (event) => events.push(event), dataDir, todoist: fakeTodoist(new Map()) },
     );
     expect(shown.ok).toBe(true);
-    expect(closed).toEqual([]);
-    expect(store.messagesFor("t1")[0]?.kind).toBe("component");
-    expect(events[0]).toMatchObject({ type: "component.shown", name: "show_record_card", status: "shown" });
+    expect(shown.ok && shown.value.origin).toEqual(origin);
+    expect(store.messagesFor("t1")[0]?.component).not.toHaveProperty("actionToken");
+    expect(events[0]).toMatchObject({
+      type: "component.shown",
+      provider: "claudeAgent",
+      itemId: "toolu-1",
+      name: "show_record_card",
+    });
+    expect(readUiActions(dataDir)[0]).toMatchObject({ origin });
   });
 
-  it("loads real Todoist rows on show and does not complete them", async () => {
+  it("rejects aggregate component output above the transcript byte limit", async () => {
     const store = memoryStore();
-    const closed: string[] = [];
+    const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
+    dirs.push(dataDir);
+    const shown = await showComponent(
+      {
+        threadId: "t1",
+        name: "show_checklist",
+        arguments: {
+          title: "Oversized",
+          items: Array.from({ length: 100 }, (_, index) => ({
+            text: `${index}-${"x".repeat(1_999)}`.slice(0, 2_000),
+            done: false,
+          })),
+        },
+        origin,
+      },
+      { store, publish: () => {}, dataDir, todoist: fakeTodoist(new Map()) },
+    );
+    expect(shown).toEqual({ ok: false, error: "Component output exceeded the safe transcript limits." });
+    expect(store.messagesFor("t1")).toEqual([]);
+  });
+
+  it("loads Todoist rows on show and does not complete them", async () => {
+    const store = memoryStore();
     const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
     dirs.push(dataDir);
     const tasks = new Map<string, TodoistTaskView>([
       ["6hJCfm66Hh5Q4wqv", { id: "6hJCfm66Hh5Q4wqv", content: "Complete me from component A", isCompleted: false, url: null, due: null }],
     ]);
     const shown = await showComponent(
-      { threadId: "t1", name: "show_todoist_tasks", arguments: { title: "Test", taskIds: ["6hJCfm66Hh5Q4wqv"] } },
-      { store, publish: () => {}, dataDir, todoist: fakeTodoist(tasks, closed), token: () => "ombui_test" },
+      { threadId: "t1", name: "show_todoist_tasks", arguments: { title: "Test", taskIds: ["6hJCfm66Hh5Q4wqv"] }, origin },
+      { store, publish: () => {}, dataDir, todoist: fakeTodoist(tasks) },
     );
     expect(shown.ok).toBe(true);
-    expect(closed).toEqual([]);
     if (!shown.ok) throw new Error(shown.error);
     const args: JsonObject = shown.value.arguments;
     expect(args.tasks).toEqual([
@@ -103,96 +130,59 @@ describe("showComponent / completeTodoistTask", () => {
     ]);
   });
 
-  it("reports a total Todoist load failure as an error component", async () => {
+  it("authorizes only an exact shown task, then records Electron's completed write", async () => {
     const store = memoryStore();
     const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
     dirs.push(dataDir);
-    const todoist: TodoistClient = {
-      async getTask(taskId) {
-        return { ok: false, error: `could not load ${taskId}` };
-      },
-      async closeTask() {
-        return { ok: false, error: "not available" };
-      },
-    };
-    const shown = await showComponent(
-      { threadId: "t1", name: "show_todoist_tasks", arguments: { taskIds: ["6hJCfm66Hh5Q4wqv"] } },
-      { store, publish: () => {}, dataDir, todoist, token: () => "ombui_test" },
-    );
-    expect(shown).toMatchObject({ ok: true, value: { status: "error", result: "could not load 6hJCfm66Hh5Q4wqv" } });
-  });
-
-  it("refuses inexact or duplicate Todoist ids before loading tasks", async () => {
-    const store = memoryStore();
-    const closed: string[] = [];
-    const loaded: string[] = [];
-    const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
-    dirs.push(dataDir);
-    const todoist: TodoistClient = {
-      async getTask(taskId) {
-        loaded.push(taskId);
-        return { ok: false, error: "unexpected load" };
-      },
-      async closeTask(taskId) {
-        closed.push(taskId);
-        return { ok: true, value: true };
-      },
-    };
-
-    const padded = await showComponent(
-      { threadId: "t1", name: "show_todoist_tasks", arguments: { taskIds: [" 6hJCfm66Hh5Q4wqv"] } },
-      { store, publish: () => {}, dataDir, todoist, token: () => "ombui_test" },
-    );
-    expect(padded).toMatchObject({ ok: true, value: { status: "error" } });
-    const duplicate = await showComponent(
-      { threadId: "t1", name: "show_todoist_tasks", arguments: { taskIds: ["6hJCfm66Hh5Q4wqv", "6hJCfm66Hh5Q4wqv"] } },
-      { store, publish: () => {}, dataDir, todoist, token: () => "ombui_test" },
-    );
-    expect(duplicate).toMatchObject({ ok: true, value: { status: "error" } });
-    expect(loaded).toEqual([]);
-    expect(closed).toEqual([]);
-  });
-
-  it("completes only on an explicit click against an exact shown task id", async () => {
-    const store = memoryStore();
-    const closed: string[] = [];
-    const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
-    dirs.push(dataDir);
+    const taskId = "6hJCfm66Hh5Q4wqv";
     const tasks = new Map<string, TodoistTaskView>([
-      ["6hJCfm66Hh5Q4wqv", { id: "6hJCfm66Hh5Q4wqv", content: "A", isCompleted: false, url: null, due: null }],
-      ["6hJCfmGxJHcvjQRM", { id: "6hJCfmGxJHcvjQRM", content: "B", isCompleted: false, url: null, due: null }],
+      [taskId, { id: taskId, content: "A", isCompleted: false, url: null, due: null }],
     ]);
-    const ctx = { store, publish: () => {}, dataDir, todoist: fakeTodoist(tasks, closed), token: () => "ombui_test" };
+    const ctx = { store, publish: () => {}, dataDir, todoist: fakeTodoist(tasks) };
     const shown = await showComponent(
-      { threadId: "t1", name: "show_todoist_tasks", arguments: { taskIds: ["6hJCfm66Hh5Q4wqv", "6hJCfmGxJHcvjQRM"] } },
+      { threadId: "t1", name: "show_todoist_tasks", arguments: { taskIds: [taskId] }, origin },
       ctx,
     );
-    expect(shown.ok).toBe(true);
-    if (!shown.ok) return;
-    const badId = await completeTodoistTask(
-      { threadId: "t1", callId: shown.value.callId, taskId: "nope", actionToken: "ombui_test" },
+    if (!shown.ok) throw new Error(shown.error);
+
+    await expect(authorizeTodoistCompletion({ threadId: "t1", callId: shown.value.callId, taskId: "nope" }, ctx)).resolves.toMatchObject({ ok: false });
+    await expect(authorizeTodoistCompletion({ threadId: "t1", callId: shown.value.callId, taskId }, ctx)).resolves.toEqual({ ok: true, value: { taskId } });
+    // A curl-equivalent reconciliation cannot bypass the trusted Electron
+    // close: the remote task must already report completed.
+    await expect(reconcileTodoistCompletion({ threadId: "t1", callId: shown.value.callId, taskId }, ctx)).resolves.toMatchObject({
+      ok: false,
+      error: "Todoist has not confirmed this task as completed.",
+    });
+    tasks.set(taskId, { id: taskId, content: "A", isCompleted: true, url: null, due: null });
+    await expect(reconcileTodoistCompletion({ threadId: "t1", callId: shown.value.callId, taskId }, ctx)).resolves.toEqual({ ok: true, value: { taskId } });
+    expect(shown.value).not.toHaveProperty("actionToken");
+    expect(store.messagesFor("t1")[0]?.component?.arguments).toMatchObject({
+      tasks: [{ id: taskId, isCompleted: true }],
+    });
+    expect(readUiActions(dataDir).some((row) => row.kind === "complete-accepted")).toBe(false);
+    await expect(reconcileTodoistCompletion({ threadId: "t1", callId: shown.value.callId, taskId }, ctx)).resolves.toEqual({
+      ok: true,
+      value: { taskId },
+    });
+  });
+
+  it("reconciles an already-closed remote task without attempting a close", async () => {
+    const store = memoryStore();
+    const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
+    dirs.push(dataDir);
+    const taskId = "closed-task";
+    const tasks = new Map<string, TodoistTaskView>([
+      [taskId, { id: taskId, content: "A", isCompleted: false, url: null, due: null }],
+    ]);
+    const ctx = { store, publish: () => {}, dataDir, todoist: fakeTodoist(tasks) };
+    const shown = await showComponent(
+      { threadId: "t1", name: "show_todoist_tasks", arguments: { taskIds: [taskId] }, origin },
       ctx,
     );
-    expect(badId.ok).toBe(false);
-    const padded = await completeTodoistTask(
-      { threadId: "t1", callId: shown.value.callId, taskId: "6hJCfm66Hh5Q4wqv ", actionToken: "ombui_test" },
-      ctx,
-    );
-    expect(padded.ok).toBe(false);
-    const badToken = await completeTodoistTask(
-      { threadId: "t1", callId: shown.value.callId, taskId: "6hJCfm66Hh5Q4wqv", actionToken: "wrong" },
-      ctx,
-    );
-    expect(badToken.ok).toBe(false);
-    expect(closed).toEqual([]);
-    const ok = await completeTodoistTask(
-      { threadId: "t1", callId: shown.value.callId, taskId: "6hJCfm66Hh5Q4wqv", actionToken: "ombui_test" },
-      ctx,
-    );
-    expect(ok).toEqual({ ok: true, value: { taskId: "6hJCfm66Hh5Q4wqv" } });
-    expect(closed).toEqual(["6hJCfm66Hh5Q4wqv"]);
-    const trail = readUiActions(dataDir);
-    expect(trail.some((row) => row.kind === "complete-accepted" && row.taskId === "6hJCfm66Hh5Q4wqv")).toBe(true);
-    expect(trail.some((row) => row.kind === "complete-rejected")).toBe(true);
+    if (!shown.ok) throw new Error(shown.error);
+    tasks.set(taskId, { id: taskId, content: "A", isCompleted: true, url: null, due: null });
+    const result = await authorizeTodoistCompletion({ threadId: "t1", callId: shown.value.callId, taskId }, ctx);
+    expect(result).toMatchObject({ ok: false, error: "That task is already completed in Todoist." });
+    expect(store.messagesFor("t1")[0]?.component?.arguments).toMatchObject({ tasks: [{ isCompleted: true }] });
   });
 });

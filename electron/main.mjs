@@ -9,6 +9,8 @@ import { finishSpeech, startSpeech, stopSpeech } from "./speech.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { startUpdater, registerUpdaterIpc } from "./updater.mjs";
 import { migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
+import { capturePrivateEnv, withoutPrivateEnv } from "./private-env.mjs";
+import { appendTodoistCompletionReceipt, closeTodoistTask, completionKey, parseTodoistCompletionPayload, TodoistCompletionGate } from "./todoist-completion.mjs";
 import capabilitiesModule from "./capabilities.cjs";
 
 const { desktopCapabilities, nativeDesktopActions } = capabilitiesModule;
@@ -24,6 +26,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // resolve to ::1 and paint a black window
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
 const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
+const BOOT_TODOIST_TOKEN = capturePrivateEnv("TODOIST_API_TOKEN");
+const todoistCompletionGate = new TodoistCompletionGate();
 let SERVER_PORT = 8799;
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 
@@ -208,9 +212,12 @@ function slog(line) {
 async function startServerOn(port) {
   const entry = path.join(process.resourcesPath, "server", "index.js");
   slog(`fork ${entry} port=${port}`);
+  const serverCredentials = { ...secureCredentials };
+  const serverTodoistToken = secureCredentials.todoistToken || BOOT_TODOIST_TOKEN;
+  if (serverTodoistToken) serverCredentials.todoistToken = serverTodoistToken;
   const proc = utilityProcess.fork(entry, [], {
     env: {
-      ...process.env,
+      ...withoutPrivateEnv(process.env),
       OMB_STATIC_DIR: path.join(process.resourcesPath, "ui"),
       OMB_RESOURCES_PATH: process.resourcesPath,
       OMB_SKILLS_DIR: path.join(process.resourcesPath, "skills"),
@@ -222,7 +229,7 @@ async function startServerOn(port) {
       // one env var per stored workspace secret (xai/box/voice/OpenCode Go);
       // the server prefers these over config.json, whose plaintext fields
       // the boot migration has deleted
-      ...workspaceCredentialEnv(secureCredentials),
+      ...workspaceCredentialEnv(serverCredentials),
       ...(composioBrokerUrl() && secureCredentials.composioBrokerToken
         ? {
             OMB_COMPOSIO_BROKER_URL: composioBrokerUrl(),
@@ -643,6 +650,12 @@ ipcMain.handle("credential:set", async (_event, name, value) => {
     });
     const body = await response.json().catch(() => null);
     if (!response.ok) throw new Error(body?.error || `Could not save credential (HTTP ${response.status})`);
+    if (!app.isPackaged) {
+      const nextCredentials = { ...secureCredentials };
+      if (secret) nextCredentials[name] = secret;
+      else delete nextCredentials[name];
+      secureCredentials = nextCredentials;
+    }
     return body;
   } catch (error) {
     if (app.isPackaged) {
@@ -651,6 +664,44 @@ ipcMain.handle("credential:set", async (_event, name, value) => {
     }
     throw error;
   }
+});
+
+async function todoistServerAction(pathname, payload) {
+  const response = await fetch(`http://127.0.0.1:${SERVER_PORT}${pathname}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.error || `Todoist action failed (HTTP ${response.status})`);
+  return body;
+}
+
+ipcMain.handle("todoist:complete", async (_event, value) => {
+  const payload = parseTodoistCompletionPayload(value);
+  if (!payload) throw new Error("Invalid Todoist completion request.");
+  // The server performs a read-only transcript/remote-state authorization.
+  // Only Electron main owns the remote close and the token needed to make it.
+  await todoistServerAction("/api/ui/todoist/authorize", payload);
+  const token = secureCredentials.todoistToken || BOOT_TODOIST_TOKEN;
+  await todoistCompletionGate.run(completionKey(payload), () => closeTodoistTask(token, payload.taskId));
+  try {
+    appendTodoistCompletionReceipt(
+      process.env.OMB_DATA_DIR || path.join(app.getPath("home"), ".openmausbot"),
+      payload,
+    );
+  } catch (error) {
+    // Audit persistence must not turn a successful remote close into a retry.
+    console.error("[todoist] completion receipt failed", error);
+  }
+  try {
+    await todoistServerAction("/api/ui/todoist/reconcile-completion", payload);
+  } catch (error) {
+    // The remote close already succeeded and must never be retried. The card
+    // reconciles from Todoist on the next authorization/replay instead.
+    console.error("[todoist] local completion reconciliation failed", error);
+  }
+  return { ok: true, taskId: payload.taskId };
 });
 
 async function broadcastDesktopCapabilities() {

@@ -1,10 +1,9 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 import { newEventId, newId, type Json, type JsonObject, type RuntimeEvent } from "../contracts.ts";
 import type { Message } from "../store.ts";
-import type { ComponentCall, Result, TodoistTaskView } from "./contract.ts";
-import { asJsonObject, isJsonObject } from "./contract.ts";
+import type { ComponentCall, ComponentOrigin, Result, TodoistTaskView } from "./contract.ts";
+import { asJsonObject, ComponentCallSchema, isJsonObject, UI_LIMITS } from "./contract.ts";
 import { appendUiAction } from "./evidence.ts";
 import { GALLERY_BY_NAME } from "./gallery.ts";
 import { loadTodoistTasks, type TodoistClient } from "./todoist.ts";
@@ -20,16 +19,14 @@ export type ShowInput = {
   threadId: string;
   name: string;
   arguments: Json;
-  provider?: string;
-  turnId?: string;
+  origin: ComponentOrigin;
   from?: Message["from"];
 };
 
-export type CompleteInput = {
+export type CompletionInput = {
   threadId: string;
   callId: string;
   taskId: string;
-  actionToken: string;
 };
 
 export type ShowContext = {
@@ -38,7 +35,6 @@ export type ShowContext = {
   dataDir: string;
   todoist: TodoistClient;
   now?: () => string;
-  token?: () => string;
 };
 
 const TODOIST_NAME = "show_todoist_tasks";
@@ -50,14 +46,8 @@ function stringValue(value: Json | undefined, fallback: string): string {
   return parsed.success ? parsed.data : fallback;
 }
 
-export function newActionToken(): string {
-  return `ombui_${randomBytes(18).toString("hex")}`;
-}
-
-function actionTokenMatches(expected: string, provided: string): boolean {
-  const expectedBytes = Buffer.from(expected);
-  const providedBytes = Buffer.from(provided);
-  return expectedBytes.length === providedBytes.length && timingSafeEqual(expectedBytes, providedBytes);
+function boundedResult(value: string): string {
+  return value.slice(0, UI_LIMITS.result);
 }
 
 export async function showComponent(input: ShowInput, ctx: ShowContext): Promise<Result<ComponentCall, string>> {
@@ -84,10 +74,14 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
     callId: newId(),
     name: spec.name,
     arguments: storedArgs,
-    result,
+    result: boundedResult(result),
     status,
-    actionToken: (ctx.token ?? newActionToken)(),
+    origin: input.origin,
   };
+  const safeCall = ComponentCallSchema.safeParse(call);
+  if (!safeCall.success) {
+    return { ok: false, error: "Component output exceeded the safe transcript limits." };
+  }
 
   ctx.store.appendMessage(input.threadId, {
     role: "bot",
@@ -95,32 +89,34 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
     component: call,
     from: input.from,
   });
-  const saved = call;
 
   const at = (ctx.now ?? (() => new Date().toISOString()))();
   ctx.publish({
     eventId: newEventId(),
-    provider: input.provider ?? "ui",
+    provider: input.origin.provider,
+    providerInstanceId: input.origin.providerInstanceId,
     threadId: input.threadId,
     createdAt: at,
-    turnId: input.turnId,
+    turnId: input.origin.turnId,
+    itemId: input.origin.itemId,
     type: "component.shown",
-    name: saved.name,
-    arguments: saved.arguments,
-    result: saved.result,
-    status: saved.status,
-    callId: saved.callId,
+    name: call.name,
+    arguments: call.arguments,
+    result: call.result,
+    status: call.status,
+    callId: call.callId,
   });
   appendUiAction(ctx.dataDir, {
     at,
     kind: "shown",
     threadId: input.threadId,
-    callId: saved.callId,
-    name: saved.name,
-    ok: saved.status === "shown",
-    detail: saved.result,
+    callId: call.callId,
+    name: call.name,
+    ok: call.status === "shown",
+    detail: call.result,
+    origin: call.origin,
   });
-  return { ok: true, value: saved };
+  return { ok: true, value: call };
 }
 
 function exactTodoistTaskIds(value: Json | undefined): Result<string[], string> {
@@ -195,9 +191,45 @@ function listedTask(args: JsonObject, taskId: string): JsonObject | null {
   return null;
 }
 
-export async function completeTodoistTask(input: CompleteInput, ctx: ShowContext): Promise<Result<{ taskId: string }, string>> {
+function completionCandidate(
+  input: CompletionInput,
+  ctx: ShowContext,
+  allowCompleted = false,
+): Result<{ found: { message: Message; call: ComponentCall }; task: JsonObject; taskId: string }, string> {
+  const taskId = input.taskId.trim();
+  if (!taskId) return { ok: false, error: "A task id is required." };
+  if (taskId !== input.taskId) return { ok: false, error: "Task id must match exactly, with no extra space." };
+  const found = findComponentCall(ctx.store, input.threadId, input.callId);
+  if (!found) return { ok: false, error: "That component call is not in this thread." };
+  if (found.call.name !== TODOIST_NAME) return { ok: false, error: "That component cannot complete a Todoist task." };
+  const task = listedTask(found.call.arguments, taskId);
+  if (!task) return { ok: false, error: "That task is not one of the tasks shown on this component." };
+  if (task.unavailable === true) return { ok: false, error: "That task was unavailable when this component was shown." };
+  if (!allowCompleted && task.isCompleted === true) return { ok: false, error: "That task is already completed in this component." };
+  return { ok: true, value: { found, task, taskId } };
+}
+
+/** Read-only authorization for the Electron main process. A curl can learn only
+ * whether the transcript currently contains the row; it cannot close Todoist,
+ * because the remote write exists solely behind Electron IPC. */
+export async function authorizeTodoistCompletion(input: CompletionInput, ctx: ShowContext): Promise<Result<{ taskId: string }, string>> {
+  const candidate = completionCandidate(input, ctx);
+  if (!candidate.ok) return candidate;
+  const remote = await ctx.todoist.getTask(candidate.value.taskId);
+  if (!remote.ok) return remote;
+  if (remote.value.isCompleted) {
+    markCompleted(candidate.value.found, input, ctx);
+    return { ok: false, error: "That task is already completed in Todoist." };
+  }
+  return { ok: true, value: { taskId: candidate.value.taskId } };
+}
+
+/** Reconcile a remote close into the transcript. This endpoint is read-only
+ * against Todoist and never emits the trusted Electron action receipt. */
+export async function reconcileTodoistCompletion(input: CompletionInput, ctx: ShowContext): Promise<Result<{ taskId: string }, string>> {
   const at = (ctx.now ?? (() => new Date().toISOString()))();
-  const reject = (detail: string): Result<{ taskId: string }, string> => {
+  const candidate = completionCandidate(input, ctx, true);
+  if (!candidate.ok) {
     appendUiAction(ctx.dataDir, {
       at,
       kind: "complete-rejected",
@@ -206,45 +238,42 @@ export async function completeTodoistTask(input: CompleteInput, ctx: ShowContext
       name: TODOIST_NAME,
       taskId: input.taskId,
       ok: false,
-      detail,
+      detail: candidate.error,
     });
-    return { ok: false, error: detail };
-  };
-
-  const taskId = input.taskId.trim();
-  if (!taskId) return reject("A task id is required.");
-  if (taskId !== input.taskId) return reject("Task id must match exactly, with no extra space.");
-
-  const found = findComponentCall(ctx.store, input.threadId, input.callId);
-  if (!found) return reject("That component call is not in this thread.");
-  if (found.call.name !== TODOIST_NAME) return reject("That component cannot complete a Todoist task.");
-  if (!actionTokenMatches(found.call.actionToken, input.actionToken)) {
-    return reject("This completion request was not authenticated.");
+    return candidate;
   }
+  if (candidate.value.task.isCompleted === true) {
+    return { ok: true, value: { taskId: candidate.value.taskId } };
+  }
+  const remote = await ctx.todoist.getTask(candidate.value.taskId);
+  const remoteError = !remote.ok
+    ? remote.error
+    : remote.value.isCompleted
+      ? null
+      : "Todoist has not confirmed this task as completed.";
+  if (remoteError) {
+    appendUiAction(ctx.dataDir, {
+      at,
+      kind: "complete-rejected",
+      threadId: input.threadId,
+      callId: input.callId,
+      name: TODOIST_NAME,
+      taskId: input.taskId,
+      ok: false,
+      detail: remoteError,
+      origin: candidate.value.found.call.origin,
+    });
+    return { ok: false, error: remoteError };
+  }
+  markCompleted(candidate.value.found, input, ctx);
+  return { ok: true, value: { taskId: candidate.value.taskId } };
+}
 
-  const task = listedTask(found.call.arguments, taskId);
-  if (!task) return reject("That task is not one of the tasks shown on this component.");
-  if (task.unavailable === true) return reject("That task was unavailable when this component was shown.");
-  if (task.isCompleted === true) return reject("That task is already completed in this component.");
-
-  const closed = await ctx.todoist.closeTask(taskId);
-  if (!closed.ok) return reject(closed.error);
-
-  const nextArgs = markTaskCompleted(found.call.arguments, taskId);
+function markCompleted(found: { message: Message; call: ComponentCall }, input: CompletionInput, ctx: ShowContext): void {
+  const nextArgs = markTaskCompleted(found.call.arguments, input.taskId);
   ctx.store.patchMessage(input.threadId, found.message.id, {
     component: { ...found.call, arguments: nextArgs },
   });
-  appendUiAction(ctx.dataDir, {
-    at,
-    kind: "complete-accepted",
-    threadId: input.threadId,
-    callId: input.callId,
-    name: TODOIST_NAME,
-    taskId,
-    ok: true,
-    detail: "completed by explicit click",
-  });
-  return { ok: true, value: { taskId } };
 }
 
 function markTaskCompleted(args: JsonObject, taskId: string): JsonObject {

@@ -13,9 +13,12 @@
 import { chmodSync, closeSync, existsSync, openSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 
 import { DATA_DIR } from "./config.ts";
+import type { Json } from "./contracts.ts";
 import type { Message } from "./store.ts";
+import { invalidStoredComponentCall, parseStoredComponentCall } from "./ui/contract.ts";
 
 const DB_FILE = () => join(DATA_DIR, "messages.db");
 
@@ -67,7 +70,58 @@ function db(): DatabaseSync {
   return handle;
 }
 
-const rowToMessage = (row: { json: string }): Message => JSON.parse(row.json) as Message;
+type StoredMessageRow = { id: string; at: number; role: string; kind: string; text: string | null; json: string };
+type DecodedStoredMessage = { message: Message; migrated: boolean };
+const StoredMessageEnvelope = z.object({
+  id: z.string(),
+  at: z.number(),
+  role: z.enum(["bot", "user"]),
+  kind: z.enum(["text", "options", "activity", "screen", "connector", "component"]),
+}).passthrough();
+const LegacyThreadEnvelope = z.object({
+  messages: z.array(z.json()).optional(),
+  activeLeafId: z.string().nullable().optional(),
+}).passthrough();
+
+function quarantinedRow(row: StoredMessageRow): DecodedStoredMessage {
+  return {
+    message: {
+      id: row.id,
+      at: row.at,
+      role: row.role === "user" ? "user" : "bot",
+      kind: "component",
+      text: row.text ?? undefined,
+      component: invalidStoredComponentCall(row.id),
+    },
+    migrated: true,
+  };
+}
+
+function rowToMessage(row: StoredMessageRow): DecodedStoredMessage {
+  let raw: object;
+  try {
+    raw = JSON.parse(row.json);
+  } catch {
+    return quarantinedRow(row);
+  }
+  const envelope = StoredMessageEnvelope.safeParse(raw);
+  if (!envelope.success) return quarantinedRow(row);
+  // SAFETY: the envelope schema establishes the Message discriminants and
+  // primitives. Component data receives its own strict validation below.
+  const decoded = envelope.data as Message;
+  if (decoded.kind !== "component") return { message: decoded, migrated: false };
+  const parsed = parseStoredComponentCall(decoded.component);
+  if (!parsed.ok) {
+    return {
+      message: { ...decoded, role: "bot", kind: "component", component: invalidStoredComponentCall(row.id) },
+      migrated: true,
+    };
+  }
+  return {
+    message: { ...decoded, component: parsed.value.call },
+    migrated: parsed.value.migrated,
+  };
+}
 
 export interface ThreadRows {
   messages: Message[];
@@ -76,31 +130,64 @@ export interface ThreadRows {
 
 /** Read one thread, importing its legacy JSON file on first touch. */
 export function readThread(threadId: string, legacyFile: string): ThreadRows {
+  // SAFETY: the SELECT aliases and SQLite column declarations match
+  // StoredMessageRow exactly; row JSON is still parsed defensively below.
   const rows = db()
-    .prepare("SELECT json FROM messages WHERE thread_id = ? ORDER BY rowid")
-    .all(threadId) as Array<{ json: string }>;
+    .prepare("SELECT id, at, role, kind, text, json FROM messages WHERE thread_id = ? ORDER BY rowid")
+    .all(threadId) as StoredMessageRow[];
   if (rows.length) {
+    const decoded = rows.map(rowToMessage);
+    for (const row of decoded) {
+      if (row.migrated) updateMessage(threadId, row.message);
+    }
+    // SAFETY: this query selects the nullable TEXT column named below.
     const state = db()
       .prepare("SELECT active_leaf_id FROM thread_state WHERE thread_id = ?")
       .get(threadId) as { active_leaf_id: string | null } | undefined;
-    return { messages: rows.map(rowToMessage), activeLeafId: state?.active_leaf_id ?? null };
+    return { messages: decoded.map((row) => row.message), activeLeafId: state?.active_leaf_id ?? null };
   }
   return importLegacy(threadId, legacyFile);
+}
+
+function importedMessage(value: Json): Message | null {
+  const envelope = StoredMessageEnvelope.safeParse(value);
+  if (!envelope.success) return null;
+  // SAFETY: the envelope schema establishes Message's discriminants. The
+  // component payload is parsed separately before this value is persisted.
+  const message = envelope.data as Message;
+  if (message.kind !== "component") return message;
+  const component = parseStoredComponentCall(message.component);
+  return {
+    ...message,
+    role: "bot",
+    component: component.ok ? component.value.call : invalidStoredComponentCall(message.id),
+  };
 }
 
 function importLegacy(threadId: string, legacyFile: string): ThreadRows {
   let messages: Message[] = [];
   let activeLeafId: string | null = null;
-  let raw: unknown;
+  let raw: object;
   try {
     raw = JSON.parse(readFileSync(legacyFile, "utf8"));
   } catch {
     return { messages, activeLeafId }; // fresh thread
   }
-  if (Array.isArray(raw)) messages = raw as Message[]; // pre-branching flat file
-  else if (raw && typeof raw === "object") {
-    messages = ((raw as { messages?: Message[] }).messages ?? []) as Message[];
-    activeLeafId = (raw as { activeLeafId?: string | null }).activeLeafId ?? null;
+  const flat = z.array(z.json()).safeParse(raw);
+  if (flat.success) {
+    messages = flat.data.flatMap((value) => {
+      const message = importedMessage(value);
+      return message ? [message] : [];
+    });
+  } else {
+    const thread = LegacyThreadEnvelope.safeParse(raw);
+    if (thread.success) {
+      activeLeafId = thread.data.activeLeafId ?? null;
+      messages = (thread.data.messages ?? []).flatMap((value) => {
+        const message = importedMessage(value);
+        return message ? [message] : [];
+      });
+    }
   }
   const insert = db().prepare(
     "INSERT OR REPLACE INTO messages (thread_id, id, at, role, kind, text, json) VALUES (?, ?, ?, ?, ?, ?, ?)",

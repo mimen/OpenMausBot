@@ -11,6 +11,8 @@ const HARNESS = process.env.OMB_HARNESS_URL ?? "http://127.0.0.1:8799";
 const TOKEN = process.env.OMB_COMMS_TOKEN ?? "";
 const BOT_ID = process.env.OMB_BOT_ID ?? "";
 const THREAD_ID = process.env.OMB_THREAD_ID ?? "";
+const PROVIDER = process.env.OMB_PROVIDER ?? "ui";
+const PROVIDER_INSTANCE_ID = process.env.OMB_PROVIDER_INSTANCE_ID ?? "";
 const RpcId = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const RpcParams = z.record(z.string(), z.json());
 const RpcMessage = z.object({
@@ -59,12 +61,20 @@ async function api(path: string, init?: RequestInit): Promise<JsonObject> {
   return body;
 }
 
-async function callTool(name: string, args: JsonObject): Promise<{ text: string; isError?: boolean }> {
+async function callTool(name: string, args: JsonObject, providerCallId: string): Promise<{ text: string; isError?: boolean }> {
   if (!TOOLS.some((tool) => tool.name === name)) return { text: `Unknown tool: ${name}`, isError: true };
   if (!BOT_ID || !THREAD_ID) return { text: "This UI tool has no bot or thread to draw into.", isError: true };
   const response = await api("/api/internal/ui/show", {
     method: "POST",
-    body: JSON.stringify({ botId: BOT_ID, threadId: THREAD_ID, name, arguments: args }),
+    body: JSON.stringify({
+      botId: BOT_ID,
+      threadId: THREAD_ID,
+      name,
+      arguments: args,
+      provider: PROVIDER,
+      providerInstanceId: PROVIDER_INSTANCE_ID || undefined,
+      providerCallId,
+    }),
   });
   return { text: stringValue(response.result) ?? "It is now on screen for the person." };
 }
@@ -99,7 +109,7 @@ async function handle(message: RpcMessageValue): Promise<void> {
       try {
         const parsedArgs = RpcParams.safeParse(params.arguments);
         const args = parsedArgs.success ? parsedArgs.data : {};
-        const { text, isError } = await callTool(name, args);
+        const { text, isError } = await callTool(name, args, String(id));
         textResult(id, text, isError);
       } catch (error) {
         textResult(id, error instanceof Error ? error.message : String(error), true);

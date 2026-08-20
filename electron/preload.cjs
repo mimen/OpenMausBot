@@ -81,6 +81,10 @@ contextBridge.exposeInMainWorld("ogb", {
   pickFolder: (current) => ipcRenderer.invoke("desktop:pick-folder", current),
   /** Store a provider credential with OS-backed encryption. */
   setCredential: (name, value) => ipcRenderer.invoke("credential:set", name, value),
+  /** The only Todoist completion seam. Browser-only renders do not receive it. */
+  todoist: {
+    complete: (payload) => ipcRenderer.invoke("todoist:complete", payload),
+  },
 
   /** In-app auto-update. State object:
    *  { status: "idle"|"checking"|"available"|"downloading"|"downloaded"|"error",
