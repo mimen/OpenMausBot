@@ -3,7 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { appendTodoistCompletionReceipt, closeTodoistTask, completionKey, TodoistCompletionGate } from "./todoist-completion.mjs";
+import { appendTodoistCompletionReceipt, closeTodoistTask, completionKey, resolveServerPort, TodoistCompletionGate } from "./todoist-completion.mjs";
+
+describe("resolveServerPort", () => {
+  it("uses the configured development server port", () => {
+    expect(resolveServerPort("18879")).toBe(18879);
+  });
+
+  it("falls back for missing, malformed, or out-of-range ports", () => {
+    expect(resolveServerPort(undefined)).toBe(8799);
+    expect(resolveServerPort("not-a-port")).toBe(8799);
+    expect(resolveServerPort("0")).toBe(8799);
+    expect(resolveServerPort("65536")).toBe(8799);
+  });
+});
 
 describe("TodoistCompletionGate", () => {
   it("consumes before await so parallel and repeated clicks issue one remote close", async () => {

@@ -2,12 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import { UI_LIMITS } from "../../../server/ui/contract";
 import { boundedChecklistItems, boundedMetrics, boundedRecordFields } from "./renderer";
-import { boundedTodoistTasks, todoistActionLabel } from "./todoist-tasks";
+import { boundedTodoistTasks, formatTodoistDue, todoistActionLabel } from "./todoist-tasks";
 
 describe("component renderer bounds", () => {
   it("announces the Todoist loading state in the button name", () => {
     expect(todoistActionLabel("loading", "Task A")).toBe("Completing Task A");
     expect(todoistActionLabel("completed", "Task A")).toBe("Completed Task A");
+  });
+
+  it("formats Todoist due dates compactly", () => {
+    const year = new Date().getFullYear();
+    expect(formatTodoistDue(`${year}-06-30`)).not.toContain(String(year));
+    expect(formatTodoistDue(`${year + 1}-06-30`)).toContain(String(year + 1));
+    expect(formatTodoistDue("not-a-date")).toBe("not-a-date");
   });
 
   it("caps every row-producing renderer helper", () => {

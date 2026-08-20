@@ -116,7 +116,18 @@ describe("showComponent / Todoist desktop authorization", () => {
     const dataDir = mkdtempSync(join(tmpdir(), "omb-ui-"));
     dirs.push(dataDir);
     const tasks = new Map<string, TodoistTaskView>([
-      ["6hJCfm66Hh5Q4wqv", { id: "6hJCfm66Hh5Q4wqv", content: "Complete me from component A", isCompleted: false, url: null, due: null }],
+      ["6hJCfm66Hh5Q4wqv", {
+        id: "6hJCfm66Hh5Q4wqv",
+        content: "Complete me from component A",
+        description: "A task description",
+        isCompleted: false,
+        url: null,
+        due: "2026-08-30",
+        projectId: "project-1",
+        projectName: "Inbox",
+        labels: ["openmaus-test"],
+        commentCount: 2,
+      }],
     ]);
     const shown = await showComponent(
       { threadId: "t1", name: "show_todoist_tasks", arguments: { title: "Test", taskIds: ["6hJCfm66Hh5Q4wqv"] }, origin },
@@ -126,7 +137,19 @@ describe("showComponent / Todoist desktop authorization", () => {
     if (!shown.ok) throw new Error(shown.error);
     const args: JsonObject = shown.value.arguments;
     expect(args.tasks).toEqual([
-      { id: "6hJCfm66Hh5Q4wqv", content: "Complete me from component A", isCompleted: false, url: null, due: null, unavailable: false },
+      {
+        id: "6hJCfm66Hh5Q4wqv",
+        content: "Complete me from component A",
+        description: "A task description",
+        isCompleted: false,
+        url: null,
+        due: "2026-08-30",
+        projectId: "project-1",
+        projectName: "Inbox",
+        labels: ["openmaus-test"],
+        commentCount: 2,
+        unavailable: false,
+      },
     ]);
   });
 

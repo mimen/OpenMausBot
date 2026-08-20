@@ -14,6 +14,11 @@ export function parseTodoistCompletionPayload(value) {
   return parsed.success ? parsed.data : null;
 }
 
+export function resolveServerPort(value, fallback = 8799) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65_535 ? parsed : fallback;
+}
+
 export class TodoistCompletionGate {
   #consumed = new Set();
 

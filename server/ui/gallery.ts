@@ -162,6 +162,11 @@ export const GALLERY_BY_NAME: ReadonlyMap<string, GallerySpec> = new Map(GALLERY
 
 export const UI_TOOL_NAMES: ReadonlySet<string> = new Set(GALLERY.map((spec) => spec.name));
 
+export function generativeUiSystemPrompt(): string {
+  const tools = GALLERY.map((spec) => `${spec.name} (${spec.title.toLowerCase()})`).join(", ");
+  return `You can put structured UI on screen with the ui tools. Available tools: ${tools}. Prefer a component over a markdown table or prose list when the person should inspect or act on structured information. The mounted tool schemas are the source of truth; never invent a UI tool name or arguments. Showing a component never performs its interactive action — the person must use the control in OpenMausBot.`;
+}
+
 export function uiToolNameFromTitle(title: string | undefined): string | null {
   if (!title) return null;
   if (UI_TOOL_NAMES.has(title)) return title;

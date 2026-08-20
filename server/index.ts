@@ -93,7 +93,7 @@ import { WebhookManager } from "./webhooks.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 import { loadBundledSkills, renderSkillInstructions, selectBundledSkills } from "./skill-library.ts";
 import { shouldMountLocalComputer } from "./local-routing.ts";
-import { isUiToolTitle } from "./ui/gallery.ts";
+import { generativeUiSystemPrompt, isUiToolTitle } from "./ui/gallery.ts";
 import { UiCallCorrelation } from "./ui/correlation.ts";
 import { authorizeTodoistCompletion, reconcileTodoistCompletion, showComponent, type ShowContext } from "./ui/show.ts";
 import { capturedTodoistToken, liveTodoistClient, validateTodoistToken } from "./ui/todoist.ts";
@@ -1652,9 +1652,7 @@ async function startTurn(
           (integrations.composio
             ? " The user's connected apps (Gmail, Calendar, Slack, Notion, and the rest) are reachable through the composio tools — find the right one with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. Reach for them before telling the user you have no access to a service."
             : "") +
-          (integrations.ui
-            ? " You can put structured UI on screen with the ui tools: show_record_card, show_metrics_card, show_checklist, show_quote, and show_todoist_tasks. Prefer a component over a markdown table when showing records, figures, checklists, quotations, or Todoist tasks. show_todoist_tasks displays real tasks from exact task IDs; completing one requires the person to click in the component — showing a task never completes it."
-            : "") +
+          (integrations.ui ? ` ${generativeUiSystemPrompt()}` : "") +
           (coordinationPrompt ? ` ${coordinationPrompt}` : "") +
           (privateWorkspace ? memorySystemPrompt(bot.id) : "") +
           skillInstructions +
@@ -1911,6 +1909,7 @@ async function runGroupMemberTurn(
   const cwd = groupTurnCwd(workspace, () => store.pinGroupCwd(group.id));
   const roomSystem =
     (workspace ? `${system}\n${memorySystemPrompt(bot.id).trim()}` : system) +
+    (integrations.ui ? `\n${generativeUiSystemPrompt()}` : "") +
     renderSkillInstructions(selectedSkills);
 
   // run the turn and wait for it to settle, folding the reply text so a

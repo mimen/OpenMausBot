@@ -1,0 +1,335 @@
+<title>Generative UI Architecture</title>
+<meta http-equiv="refresh" content="30">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8;
+    --panel: #ffffff;
+    --panel-2: #f0f1f3;
+    --ink: #202124;
+    --muted: #666a73;
+    --line: #dfe1e5;
+    --blue: #2967d8;
+    --blue-soft: #e9f0ff;
+    --red: #dc4c3e;
+    --red-soft: #fff0ee;
+    --green: #21845b;
+    --green-soft: #e7f5ee;
+    --purple: #7257d5;
+    --purple-soft: #eeeafe;
+    --code: #eef0f3;
+    --shadow: 0 18px 54px rgba(31, 38, 52, .10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #080a0d;
+      --panel: #14171b;
+      --panel-2: #1d2127;
+      --ink: #f2f3f5;
+      --muted: #9da3ad;
+      --line: #30353d;
+      --blue: #76a6ff;
+      --blue-soft: #152440;
+      --red: #ef6356;
+      --red-soft: #3b1d1b;
+      --green: #68d5a2;
+      --green-soft: #153329;
+      --purple: #b7a1ff;
+      --purple-soft: #292142;
+      --code: #20242a;
+      --shadow: 0 24px 70px rgba(0, 0, 0, .34);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #080a0d; --panel: #14171b; --panel-2: #1d2127; --ink: #f2f3f5;
+    --muted: #9da3ad; --line: #30353d; --blue: #76a6ff; --blue-soft: #152440;
+    --red: #ef6356; --red-soft: #3b1d1b; --green: #68d5a2; --green-soft: #153329;
+    --purple: #b7a1ff; --purple-soft: #292142; --code: #20242a;
+    --shadow: 0 24px 70px rgba(0, 0, 0, .34);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.58 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  a { color: var(--blue); text-underline-offset: 3px; }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { border-radius: 5px; background: var(--code); padding: 2px 5px; font-size: .91em; }
+  .page { max-width: 1220px; margin: 0 auto; padding: 44px 24px 100px; }
+  .mast { border-bottom: 2px solid var(--ink); padding-bottom: 26px; }
+  .mast-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end; }
+  .eyebrow { color: var(--red); font: 700 12px/1 ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase; }
+  h1 { margin: 14px 0 16px; max-width: 990px; font-size: clamp(44px, 7.2vw, 92px); line-height: .93; letter-spacing: -.058em; }
+  .lede { max-width: 860px; margin: 0; color: var(--muted); font-size: 19px; }
+  .status { border: 1px solid var(--green); background: var(--green-soft); color: var(--green); padding: 10px 13px; font: 700 11px/1.35 ui-monospace, monospace; letter-spacing: .06em; text-transform: uppercase; }
+  .path { margin-top: 18px; color: var(--muted); font: 12px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+  .thesis { margin: 32px 0 0; display: grid; grid-template-columns: .85fr 1.15fr; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+  .thesis-copy { padding: 30px; border-right: 1px solid var(--line); }
+  .thesis-copy h2 { margin: 9px 0 14px; font-size: 29px; letter-spacing: -.035em; }
+  .thesis-copy p { color: var(--muted); }
+  .law { margin-top: 22px; border-left: 4px solid var(--red); padding-left: 14px; font-weight: 750; }
+  .diagram { padding: 25px; overflow-x: auto; }
+  .pipeline { min-width: 660px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: stretch; }
+  .pipe-node { position: relative; border: 1px solid var(--line); background: var(--panel-2); padding: 15px; min-height: 105px; }
+  .pipe-node:not(:last-child)::after { content: "→"; position: absolute; right: -18px; top: 38px; z-index: 2; color: var(--red); font: 700 22px/1 ui-monospace, monospace; }
+  .pipe-node b { display: block; margin-bottom: 6px; font-size: 13px; }
+  .pipe-node span { color: var(--muted); font-size: 12px; }
+  .section { margin-top: 58px; }
+  .section-head { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 18px; border-top: 1px solid var(--line); padding-top: 18px; }
+  .section-index { color: var(--red); font: 700 12px ui-monospace, monospace; }
+  h2 { margin: 0; font-size: 34px; letter-spacing: -.04em; }
+  h3 { margin: 0 0 8px; font-size: 18px; letter-spacing: -.018em; }
+  .intro { max-width: 900px; margin: 9px 0 23px 90px; color: var(--muted); }
+  .grid-2 { margin-left: 90px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+  .grid-3 { margin-left: 90px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
+  .card { border: 1px solid var(--line); background: var(--panel); padding: 20px; }
+  .card p { margin: 7px 0 0; color: var(--muted); }
+  .card ul, .card ol { margin: 10px 0 0 18px; padding: 0; color: var(--muted); }
+  .card.core { border-top: 5px solid var(--blue); }
+  .card.action { border-top: 5px solid var(--red); }
+  .card.safe { border-top: 5px solid var(--green); }
+  .card.future { border-top: 5px solid var(--purple); }
+  .flow { margin-left: 90px; border: 1px solid var(--line); background: var(--panel); padding: 24px; overflow-x: auto; }
+  .flow pre { min-width: 790px; margin: 0; color: var(--ink); font-size: 13px; line-height: 1.72; }
+  .table-wrap { margin-left: 90px; overflow-x: auto; border: 1px solid var(--line); background: var(--panel); }
+  table { width: 100%; min-width: 820px; border-collapse: collapse; }
+  th, td { border-bottom: 1px solid var(--line); padding: 12px 14px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font: 700 11px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+  tr:last-child td { border-bottom: 0; }
+  .sequence { margin-left: 90px; counter-reset: step; }
+  .step { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 17px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+  .step::before { counter-increment: step; content: counter(step); display: grid; width: 38px; height: 38px; place-items: center; background: var(--red-soft); color: var(--red); font: 700 14px ui-monospace, monospace; }
+  .step p { margin: 4px 0 0; color: var(--muted); }
+  .callout { margin: 22px 0 0 90px; border-left: 5px solid var(--purple); background: var(--purple-soft); padding: 18px 20px; }
+  .callout strong { color: var(--purple); }
+  .todo-row { margin-top: 16px; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 12px; border-top: 1px solid var(--line); padding-top: 13px; }
+  .todo-circle { width: 20px; height: 20px; margin-top: 2px; border: 2px solid var(--red); border-radius: 50%; }
+  .todo-title { font-size: 14px; }
+  .todo-description { color: var(--muted); font-size: 12px; }
+  .todo-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; color: var(--muted); font-size: 11px; }
+  .todo-due { color: var(--red); }
+  .tag { display: inline-block; border: 1px solid var(--line); padding: 2px 6px; color: var(--muted); font: 11px ui-monospace, monospace; }
+  footer { margin-top: 70px; border-top: 2px solid var(--ink); padding-top: 18px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 860px) {
+    .mast-grid, .thesis { grid-template-columns: 1fr; }
+    .thesis-copy { border-right: 0; border-bottom: 1px solid var(--line); }
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .intro, .grid-2, .grid-3, .flow, .table-wrap, .sequence, .callout { margin-left: 0; }
+    .section-head { grid-template-columns: 42px minmax(0, 1fr); }
+  }
+</style>
+<script>
+  (() => {
+    const key = 'openmaus-generative-ui-plan-scroll';
+    const saved = sessionStorage.getItem(key);
+    if (saved) addEventListener('DOMContentLoaded', () => scrollTo(0, Number(saved)));
+    addEventListener('beforeunload', () => sessionStorage.setItem(key, String(scrollY)));
+  })();
+</script>
+
+<main class="page">
+  <header class="mast">
+    <div class="mast-grid">
+      <div>
+        <div class="eyebrow">OpenMausBot fork · Architecture and contribution plan</div>
+        <h1>Generative UI without a cloud control plane.</h1>
+        <p class="lede">A private MCP tool surface lets only OpenMaus bots ask for typed components. The harness validates and persists those calls, React renders them from SQLite, and Electron owns trusted human actions such as completing a Todoist task.</p>
+      </div>
+      <div class="status">Foundation implemented · action feedback proposed</div>
+    </div>
+    <div class="path">Plan: /Users/mimen/Programming/Repos/OpenMausBot/docs/plans/generative-ui-architecture.html</div>
+  </header>
+
+  <section class="thesis">
+    <div class="thesis-copy">
+      <div class="eyebrow">The core idea</div>
+      <h2>One registry, three execution planes.</h2>
+      <p>The model plane chooses a component. The server plane validates, enriches, authorizes, and stores it. The renderer plane displays it. Interactive writes cross a separate Electron-only boundary, so a transcript never becomes a capability.</p>
+      <div class="law">Adding a presentational component should be one registry row, one renderer, and tests. Adding an action also needs a trusted handler and an action-event contract.</div>
+    </div>
+    <div class="diagram">
+      <div class="pipeline">
+        <div class="pipe-node"><b>OpenMaus bot</b><span>Sees private <code>ui</code> MCP tools plus a system primer generated from the registry.</span></div>
+        <div class="pipe-node"><b>UI MCP proxy</b><span>Runs over stdio inside the provider turn and posts through a boot-scoped private token.</span></div>
+        <div class="pipe-node"><b>Harness server</b><span>Validates, enriches, correlates provider identity, persists to SQLite, and broadcasts.</span></div>
+        <div class="pipe-node"><b>React + Electron</b><span>Replays the component. Browser is read-only; Electron owns trusted action IPC.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">01</div><h2>What changed in the fork</h2></div>
+    <p class="intro">The implementation is intentionally split by responsibility. No CopilotKit Intelligence dependency was imported, and no general browser sandbox was added.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Layer</th><th>Key files</th><th>Responsibility</th></tr></thead>
+        <tbody>
+          <tr><td>Typed contract</td><td><code>server/ui/contract.ts</code>, <code>validate.ts</code></td><td>Public component envelope, provider origin, size limits, stored-row migration, malformed-row quarantine.</td></tr>
+          <tr><td>Component registry</td><td><code>server/ui/gallery.ts</code></td><td>Names, JSON schemas, descriptions, confirmations, exact UI-tool classification, and the system primer generated for OpenMaus bots.</td></tr>
+          <tr><td>Private model seam</td><td><code>server/drivers/ui-proxy.ts</code>, provider drivers</td><td>Mounts the <code>ui</code> MCP server per OpenMaus turn over stdio. Claude, Codex, ACP, Antigravity, and Box all converge here.</td></tr>
+          <tr><td>Show pipeline</td><td><code>server/ui/show.ts</code>, <code>todoist.ts</code></td><td>Validates tool arguments, loads trusted server data, writes the component message, and records evidence.</td></tr>
+          <tr><td>Correlation</td><td><code>server/ui/correlation.ts</code>, <code>thread-events.ts</code></td><td>Preserves originating provider, provider instance, turn, item, and call identity through either event arrival order.</td></tr>
+          <tr><td>Persistence</td><td><code>server/store.ts</code>, <code>message-db.ts</code></td><td>Stores components in SQLite, strips old capabilities, and safely replays after restart.</td></tr>
+          <tr><td>Renderer registry</td><td><code>src/components/ui/renderer.tsx</code></td><td>Maps component name to React, validates again before render, and isolates every component failure.</td></tr>
+          <tr><td>Todoist action</td><td><code>electron/todoist-completion.mjs</code>, <code>preload.cjs</code></td><td>Electron-only completion, per-call concurrency gate, token isolation, accepted receipt, and server reconciliation.</td></tr>
+          <tr><td>Evidence</td><td><code>scripts/render-generative-ui-evidence.ts</code>, <code>docs/evidence/</code></td><td>Reproducible sanitized receipts and screenshots without exposing credentials or overstating provenance.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">02</div><h2>The complete show path</h2></div>
+    <p class="intro">The component is not HTML emitted by the model. The model chooses a registered tool and supplies JSON. Every later step is deterministic application code.</p>
+    <div class="sequence">
+      <article class="step"><div><h3>The bot is told what exists</h3><p>Only when <code>integrations.ui</code> is mounted, OpenMaus adds a system primer generated from <code>GALLERY</code>. Tool schemas remain authoritative. Adding a registry row updates both the actual MCP tool list and the bot primer.</p></div></article>
+      <article class="step"><div><h3>The provider calls one UI tool</h3><p>The provider process invokes <code>mcp__ui__show_*</code> over stdio. No UI MCP server is registered in the user's global Claude, Codex, or system configuration.</p></div></article>
+      <article class="step"><div><h3>The proxy proves ownership</h3><p>The proxy receives a boot-scoped token plus exact bot and thread IDs. The internal route rejects an unknown bot or a thread that bot does not own.</p></div></article>
+      <article class="step"><div><h3>The server validates and enriches</h3><p>Presentational calls validate directly. Todoist calls accept exact task IDs, then the server loads title, description, due date, project, labels, and completion state using its private token.</p></div></article>
+      <article class="step"><div><h3>One public envelope is persisted</h3><p>SQLite stores <code>callId</code>, component name, bounded arguments, human-readable result, status, and provider origin. It deliberately stores no completion token.</p></div></article>
+      <article class="step"><div><h3>React revalidates and renders</h3><p>The renderer parses the same bounded shape again, selects a compiled component, and wraps every branch in an error boundary. Restart simply replays the stored envelope.</p></div></article>
+    </div>
+    <div class="flow"><pre>Provider CLI
+  └─ stdio MCP: show_todoist_tasks({ taskIds })
+       └─ private POST /api/internal/ui/show
+            ├─ exact bot/thread ownership
+            ├─ gallery schema + size bounds
+            ├─ Todoist GET task + project metadata
+            ├─ SQLite ComponentCall
+            └─ EventBus → /api/bots + renderer
+
+Browser renderer: can inspect, cannot mutate
+Electron renderer: click → preload IPC → Electron main → read-only authorize
+                                            → Todoist close
+                                            → trusted receipt
+                                            → server reconcile</pre></div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">03</div><h2>Why only OpenMaus bots know these tools</h2></div>
+    <p class="intro">The UI capability is born inside an OpenMaus turn. It is not installed globally and it is not exposed to unrelated local agents.</p>
+    <div class="grid-3">
+      <article class="card safe"><h3>Capability-gated mount</h3><p>The harness checks the selected OpenMaus provider adapter for <code>uiMcp: true</code>. Only then does it create <code>integrations.ui</code>.</p></article>
+      <article class="card safe"><h3>Private per-turn process</h3><p>The MCP proxy is a child of the provider turn. It receives only the harness URL, bot ID, thread ID, provider identity, and a fresh boot token.</p></article>
+      <article class="card safe"><h3>Registry-derived primer</h3><p>The model prompt is generated from the same registry that generates the MCP tools. New components cannot exist in one surface and be forgotten in the other.</p></article>
+    </div>
+    <div class="callout"><strong>Reliability claim:</strong> OpenMaus bots receive the tools and primer in both one-to-one and room turns. Other Claude Code sessions do not, because no global MCP or skill registration is created.</div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">04</div><h2>The Todoist component now speaks Todoist's visual language</h2></div>
+    <p class="intro">The native treatment keeps OpenMaus framing but uses Todoist's completion circle, flatter rows, metadata rhythm, due-date red, project marker, labels, description, and comment affordance.</p>
+    <div class="grid-2">
+      <article class="card action">
+        <h3>Current row contract</h3>
+        <div class="todo-row">
+          <div class="todo-circle"></div>
+          <div>
+            <div class="todo-title">[OpenMaus UI test] Native Todoist task row</div>
+            <div class="todo-description">Preview the completion circle, description, due date, project, labels, and comment metadata.</div>
+            <div class="todo-meta"><span class="todo-due">▣ Aug 30</span><span>#design-preview</span><span>#openmaus-test</span><span>Inbox #</span></div>
+          </div>
+        </div>
+      </article>
+      <article class="card core"><h3>Server-sourced fixings</h3><ul><li>Title and description from the task</li><li>Due date from <code>due.date</code></li><li>Project name through the Projects API</li><li>Labels and comment count when supplied</li><li>Completion state reconciled from Todoist</li><li>Task IDs hidden from the visual row but retained for authorization</li></ul></article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">05</div><h2>How to add another component</h2></div>
+    <p class="intro">Presentational components stay cheap. Interactive components pay for a separate action protocol instead of smuggling capabilities into model output.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Step</th><th>Presentational component</th><th>Interactive component</th></tr></thead>
+        <tbody>
+          <tr><td>1. Registry</td><td>Add one <code>GallerySpec</code> with name, schema, description, and confirmation.</td><td>Same, plus declared action names and user-visible verbs.</td></tr>
+          <tr><td>2. Server resolver</td><td>Optional, only if trusted data replaces model arguments.</td><td>Required. Resolve candidate state and authorize exact entity/action pairs.</td></tr>
+          <tr><td>3. Renderer</td><td>Add one bounded React component and register its name.</td><td>Add controls that call preload IPC, never a public mutation endpoint.</td></tr>
+          <tr><td>4. Trusted action</td><td>None.</td><td>Electron handler, one-time gate, remote write, receipt, reconciliation.</td></tr>
+          <tr><td>5. Persistence</td><td>Store the public component envelope.</td><td>Store public state and action events; never store the write capability.</td></tr>
+          <tr><td>6. Tests</td><td>Schema, bounds, malformed replay, visual render.</td><td>All presentational tests plus bypass, concurrency, duplicate, failure, restart, and accessibility tests.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid-3" style="margin-top:15px">
+      <article class="card core"><h3>Good next component</h3><p><strong>Decision card:</strong> options, evidence, recommendation, and one human choice. The action stays local to OpenMaus state unless an explicit adapter writes elsewhere.</p></article>
+      <article class="card core"><h3>Good next component</h3><p><strong>Calendar proposal:</strong> events and conflicts rendered read-only first, with a separate Electron action to create the exact approved batch.</p></article>
+      <article class="card core"><h3>Good next component</h3><p><strong>Ops finding:</strong> severity, evidence, status, and prepared fix. No action handler unless the fix boundary is separately designed.</p></article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">06</div><h2>Action feedback: the missing loop</h2></div>
+    <p class="intro">Today the card updates deterministically, but the provider session is not reliably informed that the person acted. That is why a follow-up such as “how about now” can trigger a redundant Todoist query. The fix should be a general component-action protocol, not a Todoist-only prompt.</p>
+    <div class="grid-2">
+      <article class="card future"><h3>Proposed durable event</h3><p>Persist a <code>ComponentActionEvent</code> beside the component:</p><ul><li><code>actionId</code> and idempotency key</li><li><code>threadId</code>, <code>callId</code>, component and action names</li><li>public entity label and bounded result</li><li>status: started, succeeded, failed</li><li>trusted origin: Electron main</li><li>provider-context delivery cursor</li></ul></article>
+      <article class="card future"><h3>Proposed bot awareness</h3><ol><li>Electron succeeds and writes its trusted receipt.</li><li>Server reconciles component state and appends the action event.</li><li>The chat shows a deterministic “Completed in Todoist” activity immediately.</li><li>The next provider turn automatically receives every unread action event in a system-owned context block, even when resuming a provider cursor.</li><li>Optional per-bot policy can start a tiny tool-disabled acknowledgment turn immediately.</li></ol></article>
+    </div>
+    <div class="flow"><pre>Human click
+  → Electron main closes remote task exactly once
+  → trusted ComponentActionEvent persisted
+  → component updates immediately
+  → visible OpenMaus activity: "Completed in Todoist"
+  → unread event added to bot context cursor
+  → next bot turn already knows; no Bash/curl re-check
+
+Optional immediate acknowledgment turn:
+  automationSource = "ui_action"
+  tools = disabled
+  purpose = acknowledge or update plan only
+  no duplicate remote action</pre></div>
+    <div class="callout"><strong>Recommendation:</strong> ship durable context delivery first. Add automatic model acknowledgments only as an opt-in policy, because they consume tokens and can create noise. The deterministic activity plus next-turn context solves the reliability problem without another autonomous actor.</div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">07</div><h2>What servers are actually required</h2></div>
+    <p class="intro">Development uses three visible processes because Vite is separate. A packaged desktop build collapses that topology.</p>
+    <div class="grid-2">
+      <article class="card core"><h3>Development</h3><ul><li>Harness server on 18879</li><li>Webhook receiver on 18880</li><li>Vite renderer on 5199</li><li>Electron desktop window</li><li>Provider CLI child per active bot turn</li><li>UI MCP proxy child per supported provider turn</li></ul></article>
+      <article class="card safe"><h3>Packaged application</h3><ul><li>Electron main process</li><li>Bundled harness server as an Electron utility process</li><li>Compiled renderer assets served by the harness</li><li>SQLite and encrypted credentials on the local machine</li><li>No Vite server</li><li>No hosted generative-UI service</li></ul></article>
+    </div>
+    <div class="callout"><strong>External dependencies:</strong> the chosen model provider still receives model turns, and Todoist receives task reads/writes. The UI protocol, persistence, rendering, and action boundary remain local.</div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">08</div><h2>How this becomes an upstream open-source contribution</h2></div>
+    <p class="intro">The current fork proves the whole vertical slice. An upstreamable series should separate the general protocol from the Todoist opinion.</p>
+    <div class="sequence">
+      <article class="step"><div><h3>PR 1: component protocol and compiled gallery</h3><p>Land <code>ComponentCall</code>, bounds, SQLite replay, exact tool classification, renderer boundary, record/metrics/checklist/quote, and evidence tests. No external credentials or actions.</p></div></article>
+      <article class="step"><div><h3>PR 2: provider-neutral private MCP mount</h3><p>Land the UI proxy and shared integration contract across Claude, Codex, ACP, Antigravity, and Box. Include the registry-derived system primer and prove no global MCP registration.</p></div></article>
+      <article class="step"><div><h3>PR 3: generic trusted action protocol</h3><p>Introduce Electron-only actions, one-time gates, receipts, reconciliation, component-action events, and provider-context delivery without naming Todoist.</p></div></article>
+      <article class="step"><div><h3>PR 4: Todoist adapter</h3><p>Add encrypted credentials, recorded fixtures, task/project enrichment, native task renderer, close action, and end-to-end evidence as an example integration.</p></div></article>
+    </div>
+    <div class="grid-3" style="margin-top:15px">
+      <article class="card safe"><h3>Contribution hygiene</h3><p>Add an ADR for the public component envelope and action boundary. Keep every external service behind an adapter and fixture corpus.</p></article>
+      <article class="card safe"><h3>Repository quality</h3><p>Add a committed render command, CI evidence artifact, and objective <code>STANDARDS.md</code> rules for interactive components.</p></article>
+      <article class="card safe"><h3>Maintainer choice</h3><p>Todoist can stay optional. The core contribution is the protocol, private MCP mount, persistence, renderer registry, and trusted local action seam.</p></article>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">09</div><h2>Verification contract for every new component</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dimension</th><th>Required evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Model availability</td><td>Tool appears only when <code>integrations.ui</code> is mounted; registry primer names it automatically.</td></tr>
+          <tr><td>Schema</td><td>Valid, malformed, oversized, deeply nested, and legacy persisted inputs.</td></tr>
+          <tr><td>Provider identity</td><td>Both event arrival orders across every supported provider.</td></tr>
+          <tr><td>Persistence</td><td>SQLite restart replay and migration, with no capability material in public rows.</td></tr>
+          <tr><td>Rendering</td><td>Screenshot plus error-boundary test, responsive layout, keyboard focus, and screen-reader state.</td></tr>
+          <tr><td>Action security</td><td>CLI/API bypass, browser read-only behavior, parallel clicks, repeat clicks, failure retry, restart, and second-window behavior.</td></tr>
+          <tr><td>External adapter</td><td>Recorded fixtures, live smoke, token isolation, response size bounds, and idempotent reconciliation.</td></tr>
+          <tr><td>Bot awareness</td><td>Action event persisted once, visible immediately, delivered once to provider context, and never causes the remote action to repeat.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <strong>Status:</strong> the generative UI foundation and native Todoist row are implemented in the fork. The general component-action event and automatic bot-context delivery are the recommended next contribution slice.
+    <br>Evidence: <a target="_blank" rel="noopener" href="file:///Users/mimen/Programming/Worktrees/openmaus-generative-ui/docs/screenshots/generative-ui/06-todoist-native-row.png">native Todoist row screenshot</a> · <a target="_blank" rel="noopener" href="https://github.com/mimen/OpenMausBot/commit/2630750b2b21732743b3ab7467f1b1ded57e7663">hardened foundation commit</a>
+  </footer>
+</main>

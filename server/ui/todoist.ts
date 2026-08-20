@@ -7,10 +7,19 @@ const TODOIST_API = "https://api.todoist.com/api/v1";
 const TodoistTaskResponse = z.object({
   id: z.union([z.string(), z.number()]),
   content: z.string().max(UI_LIMITS.content),
+  description: z.string().max(UI_LIMITS.value).optional(),
+  project_id: z.union([z.string(), z.number()]).nullable().optional(),
+  labels: z.array(z.string().max(UI_LIMITS.label)).max(20).optional(),
+  comment_count: z.number().int().nonnegative().max(10_000).nullable().optional(),
   is_completed: z.boolean().optional(),
   checked: z.boolean().optional(),
   url: z.string().max(UI_LIMITS.value).nullable().optional(),
   due: z.object({ date: z.string().max(UI_LIMITS.label).nullable().optional() }).nullable().optional(),
+});
+
+const TodoistProjectResponse = z.object({
+  id: z.union([z.string(), z.number()]),
+  name: z.string().min(1).max(UI_LIMITS.label),
 });
 
 export type TodoistClient = {
@@ -65,6 +74,32 @@ export function capturedTodoistToken(env: { [key: string]: string | undefined } 
 }
 
 export function liveTodoistClient(tokenSource: TodoistTokenSource, fetchImpl: FetchLike = fetch): TodoistClient {
+  const projectNames = new Map<string, Promise<string | null>>();
+  const loadProjectName = (projectId: string): Promise<string | null> => {
+    const existing = projectNames.get(projectId);
+    if (existing) return existing;
+    const pending = (async () => {
+      const token = tokenSource();
+      if (!token) return null;
+      try {
+        const response = await fetchImpl(`${TODOIST_API}/projects/${encodeURIComponent(projectId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!response.ok) return null;
+        const body = await boundedResponseText(response);
+        if (!body.ok) return null;
+        const parsed = TodoistProjectResponse.safeParse(JSON.parse(body.value));
+        if (!parsed.success || String(parsed.data.id) !== projectId) return null;
+        return parsed.data.name;
+      } catch {
+        return null;
+      }
+    })();
+    projectNames.set(projectId, pending);
+    return pending;
+  };
+
   return {
     async getTask(taskId) {
       const token = tokenSource();
@@ -78,7 +113,10 @@ export function liveTodoistClient(tokenSource: TodoistTokenSource, fetchImpl: Fe
         if (!res.ok) return { ok: false, error: `Todoist could not load that task (${res.status}).` };
         const body = await boundedResponseText(res);
         if (!body.ok) return body;
-        return parseTask(body.value, taskId);
+        const parsed = parseTask(body.value, taskId);
+        if (!parsed.ok) return parsed;
+        const projectName = parsed.value.projectId ? await loadProjectName(parsed.value.projectId) : null;
+        return { ok: true, value: { ...parsed.value, projectName } };
       } catch {
         return { ok: false, error: `Todoist could not load task ${taskId}.` };
       }
@@ -135,9 +173,14 @@ export function parseTask(body: string, fallbackId: string): Result<TodoistTaskV
     value: {
       id,
       content: parsed.data.content,
+      description: parsed.data.description?.trim() || null,
       isCompleted: parsed.data.is_completed === true || parsed.data.checked === true,
       url: parsed.data.url ?? null,
       due: parsed.data.due?.date ?? null,
+      projectId: parsed.data.project_id == null ? null : String(parsed.data.project_id),
+      projectName: null,
+      labels: parsed.data.labels ?? [],
+      commentCount: parsed.data.comment_count ?? 0,
     },
   };
 }
@@ -154,9 +197,14 @@ export async function loadTodoistTasks(
         task: {
           id: taskId,
           content: result.error.slice(0, UI_LIMITS.content),
+          description: null,
           isCompleted: false,
           url: null,
           due: null,
+          projectId: null,
+          projectName: null,
+          labels: [],
+          commentCount: 0,
           unavailable: true,
         } satisfies TodoistTaskView,
         error: result.error,

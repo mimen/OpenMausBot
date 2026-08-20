@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { GALLERY, isUiToolTitle, uiToolNameFromTitle } from "./gallery.ts";
+import { GALLERY, generativeUiSystemPrompt, isUiToolTitle, uiToolNameFromTitle } from "./gallery.ts";
 
 describe("gallery", () => {
   it("classifies only exact gallery names or the exact ui MCP namespace", () => {
@@ -14,5 +14,12 @@ describe("gallery", () => {
     expect(isUiToolTitle("prefix mcp__ui__show_quote suffix")).toBe(false);
     expect(isUiToolTitle("mcp__ui__show_quote_extra")).toBe(false);
     expect(isUiToolTitle("Bash")).toBe(false);
+  });
+
+  it("derives the OpenMaus-only model primer from the component registry", () => {
+    const prompt = generativeUiSystemPrompt();
+    for (const spec of GALLERY) expect(prompt).toContain(spec.name);
+    expect(prompt).toContain("mounted tool schemas are the source of truth");
+    expect(prompt).toContain("Showing a component never performs its interactive action");
   });
 });

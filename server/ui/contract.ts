@@ -53,9 +53,14 @@ export type GallerySpec = {
 export type TodoistTaskView = {
   id: string;
   content: string;
+  description?: string | null;
   isCompleted: boolean;
   url: string | null;
   due: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  labels?: string[];
+  commentCount?: number;
   unavailable?: boolean;
 };
 

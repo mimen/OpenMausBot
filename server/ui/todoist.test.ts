@@ -37,6 +37,36 @@ describe("Todoist HTTP client contract", () => {
     for (const [, init] of fetchImpl.mock.calls) expect(init?.headers).toEqual({ Authorization: "Bearer secret" });
   });
 
+  it("enriches task rows with the native Todoist project name", async () => {
+    const fetchImpl = vi.fn<FetchLike>(async (url) => {
+      if (url.endsWith("/projects/project-1")) return response(200, JSON.stringify({ id: "project-1", name: "Health" }));
+      return response(200, JSON.stringify({
+        id: "task-1",
+        content: "Request labs",
+        description: "25-OH vitamin D and homocysteine",
+        project_id: "project-1",
+        labels: ["labs"],
+        comment_count: 1,
+        checked: false,
+        due: { date: "2026-06-30" },
+      }));
+    });
+    const client = liveTodoistClient(() => "secret", fetchImpl);
+    await expect(client.getTask("task-1")).resolves.toMatchObject({
+      ok: true,
+      value: {
+        description: "25-OH vitamin D and homocysteine",
+        projectName: "Health",
+        labels: ["labs"],
+        commentCount: 1,
+      },
+    });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.todoist.com/api/v1/tasks/task-1",
+      "https://api.todoist.com/api/v1/projects/project-1",
+    ]);
+  });
+
   it("validates tokens through the authenticated user endpoint", async () => {
     const accepted = vi.fn<FetchLike>(async () => response(200, "{}"));
     await expect(validateTodoistToken("accepted", accepted)).resolves.toEqual({ ok: true, value: true });

@@ -10,7 +10,7 @@ import { openBlankTerminal } from "./terminal-launch.mjs";
 import { startUpdater, registerUpdaterIpc } from "./updater.mjs";
 import { migrateWorkspaceCredentials, workspaceCredentialEnv } from "./workspace-credentials.mjs";
 import { capturePrivateEnv, withoutPrivateEnv } from "./private-env.mjs";
-import { appendTodoistCompletionReceipt, closeTodoistTask, completionKey, parseTodoistCompletionPayload, TodoistCompletionGate } from "./todoist-completion.mjs";
+import { appendTodoistCompletionReceipt, closeTodoistTask, completionKey, parseTodoistCompletionPayload, resolveServerPort, TodoistCompletionGate } from "./todoist-completion.mjs";
 import capabilitiesModule from "./capabilities.cjs";
 
 const { desktopCapabilities, nativeDesktopActions } = capabilitiesModule;
@@ -28,7 +28,7 @@ const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
 const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
 const BOOT_TODOIST_TOKEN = capturePrivateEnv("TODOIST_API_TOKEN");
 const todoistCompletionGate = new TodoistCompletionGate();
-let SERVER_PORT = 8799;
+let SERVER_PORT = resolveServerPort(process.env.OMB_PORT);
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 
 // GNOME groups the window with its installed desktop entry only when both
