@@ -10,14 +10,18 @@
 // resumeCursor is the codex thread id; a later turn tries thread/resume
 // and falls back to a fresh thread/start.
 import { homedir } from "node:os";
+import { z } from "zod";
 
 import { stripWorkspaceCredentialEnv } from "../config.ts";
+import { parseJsonObject, stringifyJsonResult } from "../json.ts";
 import { computerProxyEnv } from "../container-computer.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 
 import type {
   DriverCreateInput,
+  Json,
+  JsonObject,
   ProviderDriver,
   ProviderInstance,
   ProviderSnapshot,
@@ -53,6 +57,27 @@ const DENY_TIMEOUT_NOTE =
   "OpenMausBot: nobody answered this permission request in time. Skip this action and finish what you can without it.";
 
 type StdioMcpServer = { command: string; args: string[]; env: Record<string, string> };
+
+type CodexToolItem = {
+  type?: Json;
+  command?: Json;
+  arguments?: Json;
+  input?: Json;
+  toolInput?: Json;
+  changes?: Json;
+  query?: Json;
+};
+
+const STRING = z.string();
+
+function codexToolArguments(item: CodexToolItem): JsonObject | undefined {
+  const command = STRING.safeParse(item.command);
+  if (item.type === "commandExecution" && command.success) return { command: command.data };
+  if (item.type === "fileChange" && Array.isArray(item.changes)) return { changes: item.changes };
+  const query = STRING.safeParse(item.query);
+  if (item.type === "webSearch" && query.success) return { query: query.data };
+  return parseJsonObject(item.arguments) ?? parseJsonObject(item.input) ?? parseJsonObject(item.toolInput) ?? parseJsonObject(item.changes);
+}
 
 function mountMcpServer(
   appServerArgs: string[],
@@ -148,6 +173,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       }
       if (turn.integrations?.agents) {
         mountMcpServer(appServerArgs, env, "agents", turn.integrations.agents);
+      }
+      if (turn.integrations?.ui) {
+        mountMcpServer(appServerArgs, env, "ui", turn.integrations.ui);
       }
       if (turn.integrations?.computer) {
         const proxyEnv = computerProxyEnv(turn.integrations.computer);
@@ -325,15 +353,24 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             const item = p.item ?? {};
             const title =
               item.type === "commandExecution"
-                ? String(item.command ?? "shell").slice(0, 80)
+                ? "shell"
                 : item.type === "fileChange"
                   ? "edit"
                   : item.type === "mcpToolCall"
-                    ? (item.tool ?? item.name ?? "mcp")
+                    ? String(item.tool ?? item.name ?? "mcp")
                     : item.type === "webSearch"
                       ? "web_search"
                       : null;
-            if (title) emit({ ...base(threadId, turnId), type: "item.started", itemType: "tool", itemId: item.id, title });
+            if (title) {
+              emit({
+                ...base(threadId, turnId),
+                type: "item.started",
+                itemType: "tool",
+                itemId: item.id,
+                title,
+                arguments: codexToolArguments(item),
+              });
+            }
             break;
           }
           case "item/completed": {
@@ -347,13 +384,16 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 state.sawStreamDelta = false;
                 emit({ ...base(threadId, turnId), type: "item.completed", itemType: "assistant_text", text: item.text });
               }
-            } else if (["commandExecution", "fileChange", "mcpToolCall"].includes(item.type)) {
+            } else if (["commandExecution", "fileChange", "mcpToolCall", "webSearch"].includes(item.type)) {
+              const ok = item.status !== "failed" && item.status !== "declined";
               emit({
                 ...base(threadId, turnId),
                 type: "item.completed",
                 itemType: "tool",
                 itemId: item.id,
-                ok: item.status !== "failed" && item.status !== "declined",
+                ok,
+                status: ok ? "complete" : "error",
+                result: stringifyJsonResult(item.aggregatedOutput, item.output, item.result, item.content, item.error?.message),
               });
             } else if (item.type === "reasoning") {
               emit({ ...base(threadId, turnId), type: "item.updated", itemType: "reasoning", tokens: null });
@@ -545,6 +585,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           composioMcp: true,
           agentsMcp: true,
           phoneMcp: true,
+          uiMcp: true,
           images: true,
           effortLevels: ["low", "medium", "high", "xhigh", "max"],
         },

@@ -92,6 +92,16 @@ import { WebhookManager } from "./webhooks.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 import { loadBundledSkills, renderSkillInstructions, selectBundledSkills } from "./skill-library.ts";
 import { shouldMountLocalComputer } from "./local-routing.ts";
+import { isUiToolTitle } from "./ui/gallery.ts";
+import { completeTodoistTask, showComponent, type ShowContext } from "./ui/show.ts";
+import { liveTodoistClient } from "./ui/todoist.ts";
+
+const COMPLETE_TODOIST_REQUEST = z.object({
+  threadId: z.string(),
+  callId: z.string(),
+  taskId: z.string(),
+  actionToken: z.string(),
+}).strict();
 
 const PORT = Number(process.env.OMB_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.OMB_WEBHOOK_PORT || PORT + 1);
@@ -138,6 +148,7 @@ const MAX_COMMS_DEPTH = 1;
 // there is exactly one way proxies are located.
 const agentsProxyPath = SPAWNED_PROXIES.agents;
 const phoneProxyPath = SPAWNED_PROXIES.phone;
+const uiProxyPath = SPAWNED_PROXIES.ui;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
@@ -152,6 +163,20 @@ function agentsIntegration(botId: string, threadId: string, depth: number) {
       OMB_THREAD_ID: threadId,
       OMB_COMMS_TOKEN: COMMS_TOKEN,
       OMB_TURN_DEPTH: String(depth),
+    },
+  };
+}
+
+function uiIntegration(botId: string, threadId: string) {
+  return {
+    command: process.execPath,
+    args: [uiProxyPath],
+    env: {
+      ...AGENTS_NODE_FLAG,
+      OMB_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+      OMB_BOT_ID: botId,
+      OMB_THREAD_ID: threadId,
+      OMB_COMMS_TOKEN: COMMS_TOKEN,
     },
   };
 }
@@ -240,6 +265,10 @@ let bootSelection = { instanceId: "", model: "" };
 const store = new Store(() => bootSelection);
 bootSelection = await defaultSelection();
 store.seedIfEmpty();
+const todoistClient = liveTodoistClient();
+function uiContext(): ShowContext {
+  return { store, publish: (event) => bus.publish(event), dataDir: DATA_DIR, todoist: todoistClient };
+}
 
 /** A bot as a client may see it: no provider session bookkeeping.
  *
@@ -702,7 +731,14 @@ bus.subscribe((event: RuntimeEvent) => {
           const existing = store.messagesFor(event.threadId).find((m) => m.id === messageId)?.tool;
           toolName = existing?.name ?? "tool";
           store.patchMessage(event.threadId, messageId, {
-            tool: { name: toolName, ok: event.ok, spoken: existing?.spoken },
+            tool: {
+              name: toolName,
+              ok: event.ok,
+              spoken: existing?.spoken,
+              arguments: existing?.arguments,
+              result: event.result ?? existing?.result,
+              status: event.status ?? (event.ok ? "complete" : "error"),
+            },
           });
           toolMessageByItem.delete(itemKey);
         }
@@ -720,6 +756,8 @@ bus.subscribe((event: RuntimeEvent) => {
         // ask_bot's raw tool chip is redundant — the internal endpoint
         // appends a richer "Messaged @X" chip linking to the channel
         if (event.title?.endsWith("__ask_bot")) break;
+        // gallery tools draw themselves as component messages
+        if (isUiToolTitle(event.title)) break;
         const name = event.title ?? "tool";
         // narration is folded in here, once, so call mode can read the
         // chip aloud without re-deriving it — and so the phrase a user
@@ -727,7 +765,12 @@ bus.subscribe((event: RuntimeEvent) => {
         const message = pushMessage({
           role: "bot",
           kind: "activity",
-          tool: { name, spoken: narrateTool(name) ?? undefined },
+          tool: {
+            name,
+            spoken: narrateTool(name) ?? undefined,
+            arguments: event.arguments,
+            status: "pending",
+          },
         });
         if (event.itemId) toolMessageByItem.set(`${event.threadId}:${event.itemId}`, message.id);
       }
@@ -1537,6 +1580,9 @@ async function startTurn(
       ) {
         integrations.agents = agentsIntegration(bot.id, threadId, commsDepth);
       }
+      if (instance.adapter.capabilities.uiMcp === true) {
+        integrations.ui = uiIntegration(bot.id, threadId);
+      }
       // @mentions in the user's message (the composer's tagging UI) become
       // an explicit delegation nudge — the agent still does the ask_bot call
       // itself, so the harness stays the single owner of turns/permissions
@@ -1583,6 +1629,9 @@ async function startTurn(
           // bot whose driver actually mounted the tools
           (integrations.composio
             ? " The user's connected apps (Gmail, Calendar, Slack, Notion, and the rest) are reachable through the composio tools — find the right one with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. Reach for them before telling the user you have no access to a service."
+            : "") +
+          (integrations.ui
+            ? " You can put structured UI on screen with the ui tools: show_record_card, show_metrics_card, show_checklist, show_quote, and show_todoist_tasks. Prefer a component over a markdown table when showing records, figures, checklists, quotations, or Todoist tasks. show_todoist_tasks displays real tasks from exact task IDs; completing one requires the person to click in the component — showing a task never completes it."
             : "") +
           (coordinationPrompt ? ` ${coordinationPrompt}` : "") +
           (privateWorkspace ? memorySystemPrompt(bot.id) : "") +
@@ -1789,6 +1838,9 @@ async function runGroupMemberTurn(
     if (bot.composio !== false && composio.configured(cfg) && instance.adapter.capabilities.composioMcp === true) {
       const connection = await connectedAppsIntegration(bot.id, group.threadId);
       if (connection) integrations.composio = connection;
+    }
+    if (instance.adapter.capabilities.uiMcp === true) {
+      integrations.ui = uiIntegration(bot.id, group.threadId);
     }
   } catch (error) {
     store.appendMessage(group.threadId, {
@@ -2113,6 +2165,7 @@ function cliProbeEnvironment(): NodeJS.ProcessEnv {
     "COMPOSIO_API_KEY",
     "OMB_COMPOSIO_BROKER_TOKEN",
     "OMB_TTS_KEY",
+    "TODOIST_API_TOKEN",
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
   ]) {
@@ -2137,6 +2190,7 @@ function configStatus() {
     box: { configured: Boolean(cfg.box?.token) },
     vps: { configured: Boolean(vpsSshAlias(cfg)), sshAlias: vpsSshAlias(cfg) ?? "" },
     opencodeGo: { configured: Boolean(cfg.opencodeGo?.apiKey) },
+    todoist: { configured: Boolean(cfg.todoist?.token) },
     // the chosen voice is a setting, not a secret; the key is reported the
     // same configured-or-not way as every other credential
     tts: tts.describeVoice(cfg),
@@ -2457,6 +2511,34 @@ const server = createServer(async (req, res) => {
           return json(res, 200, { held: snapshot.held, helpOpen: snapshot.helpReason !== null });
         }
         return json(res, 405, { error: "method not allowed" });
+      }
+      if (method === "POST" && path === "/api/internal/ui/show") {
+        const body = await readBody(req);
+        const botId = String(body.botId ?? "");
+        const threadId = String(body.threadId ?? "");
+        const name = String(body.name ?? "");
+        const componentArguments = z.json().safeParse(body.arguments ?? {});
+        if (!componentArguments.success) return json(res, 400, { error: "component arguments must be JSON" });
+        const bot = store.bot(botId);
+        if (!bot) return json(res, 403, { error: "unknown component caller" });
+        const group = store.groupByThread(threadId);
+        const ownsThread = Boolean(store.taskByThread(botId, threadId)) || Boolean(group?.memberIds.includes(botId));
+        if (!ownsThread) return json(res, 403, { error: "component caller does not own this thread" });
+        const shown = await showComponent(
+          {
+            threadId,
+            name,
+            arguments: componentArguments.data,
+            provider: "ui",
+            from: group ? { botId: bot.id, name: bot.name, color: bot.color } : undefined,
+          },
+          uiContext(),
+        );
+        if (!shown.ok) return json(res, 400, { error: shown.error });
+        if (shown.value.status === "error") {
+          return json(res, 422, { error: shown.value.result, callId: shown.value.callId, status: shown.value.status });
+        }
+        return json(res, 200, { callId: shown.value.callId, result: shown.value.result, status: shown.value.status });
       }
       if (method === "POST" && path === "/api/internal/connectors/request") {
         const body = await readBody(req);
@@ -3579,6 +3661,14 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { app: "openmausbot", pid: process.pid, static: Boolean(STATIC_DIR) });
     }
 
+    if (method === "POST" && path === "/api/ui/todoist/complete") {
+      const body = COMPLETE_TODOIST_REQUEST.safeParse(await readBody(req));
+      if (!body.success) return json(res, 400, { error: "threadId, callId, taskId, and actionToken must be exact strings" });
+      const completed = await completeTodoistTask(body.data, uiContext());
+      if (!completed.ok) return json(res, 400, { error: completed.error });
+      return json(res, 200, { ok: true, taskId: completed.value.taskId });
+    }
+
     // ── inspector: a thread's runtime events + native protocol tee ──
     // Both logs already exist on disk; this only reads them back. Threads
     // belong to bots or rooms — anything else is not a thread we know.
@@ -3749,6 +3839,7 @@ const server = createServer(async (req, res) => {
         if (persisted.box?.token !== undefined) persisted.box.token = "";
         if (persisted.opencodeGo?.apiKey !== undefined) persisted.opencodeGo.apiKey = "";
         if (persisted.tts?.key !== undefined) persisted.tts.key = "";
+        if (persisted.todoist?.token !== undefined) persisted.todoist.token = "";
         saveConfig(persisted);
         syncCredentialEnv(patch);
         Object.assign(cfg, loadConfig());

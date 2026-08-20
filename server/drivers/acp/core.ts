@@ -16,6 +16,7 @@
 import { homedir } from "node:os";
 
 import { WORKSPACE_CREDENTIAL_ENV } from "../../config.ts";
+import { parseJsonObject, stringifyJsonResult } from "../../json.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli } from "../../procs.ts";
 
 import type {
@@ -228,6 +229,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         if (agents) {
           servers.push({ name: "agents", command: agents.command, args: agents.args, env: acpEnv(agents.env) });
         }
+        const ui = turn.integrations?.ui;
+        if (ui) {
+          servers.push({ name: "ui", command: ui.command, args: ui.args, env: acpEnv(ui.env) });
+        }
         const composio = turn.integrations?.composio;
         if (composio) {
           servers.push({
@@ -432,18 +437,22 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 type: "item.started",
                 itemType: "tool",
                 itemId: u.toolCallId,
-                title: String(u.rawInput?.command ?? u.title ?? "tool").slice(0, 80),
+                title: String(u.title ?? u.kind ?? "tool").slice(0, 80),
+                arguments: parseJsonObject(u.rawInput) ?? parseJsonObject(u.input),
               });
               break;
             }
             case "tool_call_update": {
               if (u.status === "completed" || u.status === "failed") {
+                const ok = u.status !== "failed";
                 emit({
                   ...base(threadId, turnId),
                   type: "item.completed",
                   itemType: "tool",
                   itemId: u.toolCallId,
-                  ok: u.status !== "failed",
+                  ok,
+                  status: ok ? "complete" : "error",
+                  result: stringifyJsonResult(u.rawOutput, u.output, u.result, u.content, u.error?.message),
                 });
               }
               break;
@@ -693,6 +702,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             agentsMcp: true,
             computerMcp: true,
             composioMcp: true,
+            uiMcp: true,
             images: support.images !== false,
             effortLevels: support.effortLevels,
             localComputerMcp: !config.fullAuto,

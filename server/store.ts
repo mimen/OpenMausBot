@@ -4,13 +4,16 @@
 // one). messages-<threadId>.json holds the folded transcript.
 import { existsSync, readFileSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import { DATA_DIR } from "./config.ts";
+import { parseJsonObject } from "./json.ts";
 import * as mdb from "./message-db.ts";
 import { workspaceDir } from "./workspace.ts";
-import { newId, type CloudBackend, type ModelSelection, type ThreadId } from "./contracts.ts";
+import { newId, type CloudBackend, type Json, type JsonObject, type ModelSelection, type ThreadId } from "./contracts.ts";
+import type { ComponentCall } from "./ui/contract.ts";
 import { pickBotName } from "./names.ts";
 import { redactSecretsInText } from "./redact.ts";
 
@@ -68,17 +71,27 @@ export interface ConnectorCardData {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "component";
   text?: string;
   card?: OptionCardData;
   connector?: ConnectorCardData;
+  /** Compiled generative UI call. Persisted so a restart can redraw it. */
+  component?: ComponentCall;
   /** activity messages: tool name + outcome. `spoken` is the same chip as
    * a phrase a voice can read ("reading a file") — computed once here so
    * call mode never has to re-derive it from the raw tool name, and absent
    * for chips not worth interrupting the ear for. */
   /** `setup` marks an error the user fixes by installing or configuring
    * something — the UI offers setup instead of a retry that cannot work. */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean };
+  tool?: {
+    name: string;
+    ok?: boolean;
+    spoken?: string;
+    setup?: boolean;
+    arguments?: JsonObject;
+    result?: string;
+    status?: "pending" | "complete" | "error";
+  };
   /** screen messages: a frame of the bot's computer (base64 image) */
   png?: string;
   mime?: string;
@@ -174,6 +187,8 @@ export interface TaskUsage {
   turns: number;
 }
 
+const STRING = z.string();
+
 /** Everything the BOT authored is scrubbed of content-shaped secrets before
  * it is stored: its reply text, a tool title (an ACP engine's title can be
  * the whole command line), a permission card's summary. What the user typed
@@ -200,6 +215,38 @@ function redactBotAuthored<T extends Omit<Message, "id" | "at"> & { at?: number 
       error: out.connector.error ? redactSecretsInText(out.connector.error) : undefined,
     };
   }
+  if (out.component) {
+    out.component = {
+      ...out.component,
+      result: redactSecretsInText(out.component.result),
+      arguments: redactJsonStrings(out.component.arguments),
+    };
+  }
+  if (out.tool?.arguments) {
+    out.tool = { ...out.tool, arguments: redactJsonStrings(out.tool.arguments) };
+  }
+  if (out.tool?.result !== undefined) {
+    out.tool = { ...out.tool, result: redactSecretsInText(out.tool.result) };
+  }
+  return out;
+}
+
+function redactJsonStrings(value: JsonObject): JsonObject {
+  const out: { [key: string]: Json } = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = redactJsonValue(entry);
+  }
+  return out;
+}
+
+function redactJsonValue(value: Json): Json {
+  const text = STRING.safeParse(value);
+  if (text.success) return redactSecretsInText(text.data);
+  if (Array.isArray(value)) return value.map(redactJsonValue);
+  const object = parseJsonObject(value);
+  if (!object) return value;
+  const out: { [key: string]: Json } = {};
+  for (const [key, entry] of Object.entries(object)) out[key] = redactJsonValue(entry);
   return out;
 }
 

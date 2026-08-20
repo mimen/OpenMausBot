@@ -607,6 +607,7 @@ const CREDENTIAL_PATCH = {
   xaiApiKey: (value) => ({ xai: { key: value } }),
   boxToken: (value) => ({ box: { token: value } }),
   opencodeGoApiKey: (value) => ({ opencodeGo: { apiKey: value } }),
+  todoistToken: (value) => ({ todoist: { token: value } }),
   ttsKey: (value) => ({ tts: { key: value } }),
 };
 

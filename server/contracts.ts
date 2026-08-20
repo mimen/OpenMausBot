@@ -69,6 +69,10 @@ export type InstanceConfigMap = Record<InstanceId, InstanceConfig>;
 // the recipe says to start with, sharing one base. `raw` carries the
 // native protocol message when a consumer needs to see behind the
 // normalization.
+/** JSON values that can round-trip through transcripts and runtime events. */
+export type Json = string | number | boolean | null | Json[] | { readonly [key: string]: Json };
+export type JsonObject = { readonly [key: string]: Json };
+
 export interface RuntimeEventBase {
   eventId: string;
   provider: DriverKind;
@@ -98,10 +102,18 @@ export type RuntimeEvent = RuntimeEventBase &
          * delta, a thread total, a per-step figure) and must never be summed. */
         usage?: { input: number; output: number };
       }
-    | { type: "item.started"; itemType: "tool" | "reasoning"; title?: string }
+    | { type: "item.started"; itemType: "tool" | "reasoning"; title?: string; arguments?: JsonObject }
     | { type: "item.updated"; itemType: "tool" | "reasoning"; tokens?: number | null }
-    | { type: "item.completed"; itemType: "tool"; ok: boolean }
+    | { type: "item.completed"; itemType: "tool"; ok: boolean; result?: string; status?: "complete" | "error" }
     | { type: "item.completed"; itemType: "assistant_text"; text: string }
+    | {
+        type: "component.shown";
+        name: string;
+        arguments: JsonObject;
+        result: string;
+        status: "shown" | "error";
+        callId: string;
+      }
     | { type: "content.delta"; streamKind: "assistant_text" | "reasoning_text"; delta: string }
     | {
         type: "request.opened";
@@ -186,6 +198,9 @@ export interface SendTurnInput {
     /** dweb network daemon: an MCP proxy exposing dweb status, repo, and
      * opencode model access as tools. url is the dweb HTTP base. */
     dweb?: { url: string };
+    /** Compiled generative UI: gallery components the agent can put on screen.
+     * The proxy records the call; the person acts on it in the app. */
+    ui?: { command: string; args: string[]; env: Record<string, string> };
   };
   cwd?: string;
 }
@@ -225,6 +240,8 @@ export interface ProviderAdapter {
     /** True only when local MCP calls can reach the human approval channel.
      * Full-auto/bypass provider instances must leave this false. */
     localComputerMcp?: boolean;
+    /** True when the driver mounts turn.integrations.ui as MCP tools. */
+    uiMcp?: boolean;
   };
   sendTurn(input: SendTurnInput): Promise<TurnStartResult>;
   interruptTurn(threadId: ThreadId, turnId?: TurnId): Promise<void>;

@@ -13,7 +13,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { CloudBackend, EffortLevel } from "../../server/contracts.ts";
+import type { CloudBackend, EffortLevel, JsonObject } from "../../server/contracts.ts";
+import type { ComponentCall } from "../../server/ui/contract.ts";
+
+export type { ComponentCall };
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { Routine, RoutineInput, RoutineRun } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
@@ -54,14 +57,23 @@ export interface ConnectorCardData {
 export interface Message {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "connector";
+  kind: "text" | "options" | "activity" | "screen" | "connector" | "component";
   text?: string;
   card?: OptionCardData;
   connector?: ConnectorCardData;
+  component?: ComponentCall;
   /** activity messages: tool name + outcome. `spoken` is the server's
    * narration of the same chip ("reading a file"), used by call mode. */
   /** `setup` marks an error fixed by installing something, not by retrying. */
-  tool?: { name: string; ok?: boolean; spoken?: string; setup?: boolean };
+  tool?: {
+    name: string;
+    ok?: boolean;
+    spoken?: string;
+    setup?: boolean;
+    arguments?: JsonObject;
+    result?: string;
+    status?: "pending" | "complete" | "error";
+  };
   /** screen messages: a frame of the bot's computer (base64) */
   png?: string;
   mime?: string;
@@ -222,6 +234,7 @@ export interface ConfigStatus {
   vps: { configured: boolean; sshAlias: string };
   rooms: { turnTimeoutMinutes: number };
   opencodeGo?: { configured: boolean };
+  todoist?: { configured: boolean };
   /** Voice (ElevenLabs). `configured` = a key is saved; `ready` = a key AND
    * a voice, which is what it takes to actually speak. The key itself is
    * never echoed back. */
@@ -232,7 +245,7 @@ export interface ConfigStatus {
 
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "composio" | "box" | "vps" | "rooms" | "opencodeGo" | "tts" | "profile"
+  "xai" | "composio" | "box" | "vps" | "rooms" | "opencodeGo" | "todoist" | "tts" | "profile"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -243,6 +256,7 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     vps: frame.vps,
     rooms: frame.rooms,
     opencodeGo: frame.opencodeGo,
+    todoist: frame.todoist,
     tts: frame.tts,
     profile: frame.profile,
   };

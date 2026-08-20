@@ -154,6 +154,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     delete process.env.BOX_TOKEN;
     delete process.env.OPENCODE_API_KEY;
     delete process.env.OMB_TTS_KEY;
+    delete process.env.TODOIST_API_TOKEN;
     recorder?.stop();
     await instance?.dispose();
     await removeTempDir(scratch);
@@ -184,6 +185,10 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     // the harness has one figure to bank per turn
     expect(done).toMatchObject({ type: "turn.completed", ok: true, cost: 0.01, usage: { input: 12, output: 5 } });
     expect(instance.adapter.hasSession("t-happy")).toBe(false);
+    const started = recorder.events.find((e) => e.type === "item.started" && e.itemType === "tool");
+    expect(started).toMatchObject({ title: "Bash", arguments: { command: "ls" } });
+    const toolDone = recorder.events.find((e) => e.type === "item.completed" && e.itemType === "tool");
+    expect(toolDone).toMatchObject({ ok: true, status: "complete", result: "ok" });
   });
 
   it("streams partial-message text deltas without re-emitting the whole message", async () => {
@@ -215,6 +220,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     process.env.XAI_API_KEY = "xai-should-not-leak";
     process.env.BOX_TOKEN = "box-should-not-leak";
     process.env.OMB_TTS_KEY = "tts-should-not-leak";
+    process.env.TODOIST_API_TOKEN = "todoist-should-not-leak";
 
     await instance.adapter.sendTurn({ threadId: "t-hygiene", text: "the secret prompt", system: "You are Testy." });
     await recorder.until((e) => e.type === "turn.completed");
@@ -230,6 +236,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.env.XAI_API_KEY).toBeUndefined();
     expect(seen.env.BOX_TOKEN).toBeUndefined();
     expect(seen.env.OMB_TTS_KEY).toBeUndefined();
+    expect(seen.env.TODOIST_API_TOKEN).toBeUndefined();
   });
 
   it("uses instance credentials when launching an injected local model", async () => {
@@ -296,6 +303,33 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.mcpConfig.mcpServers.dweb.args[0]).toMatch(/[\\/]drivers[\\/]dweb-proxy\.(?:ts|js)$/);
     expect(seen.mcpConfig.mcpServers.dweb.env.DWEB_URL).toBe("http://127.0.0.1:49737");
     expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain("mcp__dweb");
+  });
+
+  it("mounts the generative UI proxy as an MCP server and pre-allows its tools", async () => {
+    await create();
+    const dump = join(scratch, "dump.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+
+    await instance.adapter.sendTurn({
+      threadId: "t-ui",
+      text: "hi",
+      integrations: {
+        ui: {
+          command: process.execPath,
+          args: ["/fake/ui-proxy.js"],
+          env: { OMB_HARNESS_URL: "http://127.0.0.1:1", OMB_THREAD_ID: "t-ui", OMB_COMMS_TOKEN: "uitok" },
+        },
+      },
+    });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.mcpConfig.mcpServers.ui).toMatchObject({
+      args: ["/fake/ui-proxy.js"],
+      env: { OMB_THREAD_ID: "t-ui", OMB_COMMS_TOKEN: "uitok" },
+    });
+    expect(JSON.stringify(seen.argv)).not.toContain("uitok");
+    expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain("mcp__ui");
   });
 
   // the harness gates both the integration and the prompt hint on

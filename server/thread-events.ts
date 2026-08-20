@@ -13,6 +13,7 @@
 // thousands of native lines and the panel wants the recent ones first.
 import { closeSync, fstatSync, openSync, readSync, type Stats } from "node:fs";
 import { join } from "node:path";
+import { z } from "zod";
 import type { RuntimeEvent } from "./contracts.ts";
 
 /** One line of native/<threadId>.ndjson (server/drivers/native.ts). */
@@ -155,6 +156,15 @@ function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>):
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+const JSON_OBJECT = z.record(z.string(), z.json());
+const OPTIONAL_JSON_OBJECT = JSON_OBJECT.optional();
+const COMPONENT_SHOWN = z.object({
+  name: z.string(),
+  callId: z.string(),
+  result: z.string(),
+  status: z.enum(["shown", "error"]),
+  arguments: JSON_OBJECT,
+});
 const stringOrMissing = (value: unknown) => value === undefined || typeof value === "string";
 const stringOrNullOrMissing = (value: unknown) => value === undefined || value === null || typeof value === "string";
 const numberOrNullOrMissing = (value: unknown) => value === undefined || value === null || typeof value === "number";
@@ -190,11 +200,22 @@ function isRuntimeEvent(value: unknown): value is RuntimeEvent {
           (isRecord(value.usage) && typeof value.usage.input === "number" && typeof value.usage.output === "number"))
       );
     case "item.started":
-      return (value.itemType === "tool" || value.itemType === "reasoning") && stringOrMissing(value.title);
+      return (
+        (value.itemType === "tool" || value.itemType === "reasoning") &&
+        stringOrMissing(value.title) &&
+        OPTIONAL_JSON_OBJECT.safeParse(value.arguments).success
+      );
     case "item.updated":
       return (value.itemType === "tool" || value.itemType === "reasoning") && numberOrNullOrMissing(value.tokens);
     case "item.completed":
-      return value.itemType === "assistant_text" ? typeof value.text === "string" : value.itemType === "tool" && typeof value.ok === "boolean";
+      return value.itemType === "assistant_text"
+        ? typeof value.text === "string"
+        : value.itemType === "tool" &&
+          typeof value.ok === "boolean" &&
+          stringOrMissing(value.result) &&
+          (value.status === undefined || value.status === "complete" || value.status === "error");
+    case "component.shown":
+      return COMPONENT_SHOWN.safeParse(value).success;
     case "content.delta":
       return (value.streamKind === "assistant_text" || value.streamKind === "reasoning_text") && typeof value.delta === "string";
     case "request.opened":

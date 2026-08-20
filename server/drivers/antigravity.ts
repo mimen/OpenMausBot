@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
+import { parseJsonObject, stringifyJsonResult } from "../json.ts";
 import { augmentedPath } from "../env-path.ts";
 import { injectedApiModel, mergeLocalInject } from "./local-inject.ts";
 
@@ -296,11 +297,25 @@ export const AntigravityDriver: ProviderDriver<AntigravityConfig> = {
             if (payload.step_type === "tool") {
               const itemId = `${conversationId ?? o.conversation_id ?? "conv"}:${payload.step_index}`;
               if (payload.state === "ACTIVE") {
-                emit({ ...base(threadId, turnId), type: "item.started", itemType: "tool", itemId, title: payload.tool_name });
-              } else if (payload.state === "DONE") {
-                emit({ ...base(threadId, turnId), type: "item.completed", itemType: "tool", itemId, ok: true });
-              } else if (payload.state === "ERROR") {
-                emit({ ...base(threadId, turnId), type: "item.completed", itemType: "tool", itemId, ok: false });
+                emit({
+                  ...base(threadId, turnId),
+                  type: "item.started",
+                  itemType: "tool",
+                  itemId,
+                  title: payload.tool_name,
+                  arguments: parseJsonObject(payload.tool_info?.parameters),
+                });
+              } else if (payload.state === "DONE" || payload.state === "ERROR") {
+                const ok = payload.state === "DONE";
+                emit({
+                  ...base(threadId, turnId),
+                  type: "item.completed",
+                  itemType: "tool",
+                  itemId,
+                  ok,
+                  status: ok ? "complete" : "error",
+                  result: stringifyJsonResult(payload.tool_info?.result, payload.result, payload.output, payload.error),
+                });
               }
             } else if (payload.step_type === "agent_response" && payload.usage) {
               emit({

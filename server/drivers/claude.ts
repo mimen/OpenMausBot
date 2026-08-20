@@ -16,6 +16,7 @@ import { join, dirname } from "node:path";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
 import { augmentedPath } from "../env-path.ts";
+import { parseJsonObject, toolResultContentText } from "../json.ts";
 import { brokerSocketPath, describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 
 import type {
@@ -445,6 +446,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpServers.phone = { ...turn.integrations.phone };
         allowed.push("mcp__phone");
       }
+      if (turn.integrations?.ui) {
+        mcpServers.ui = { ...turn.integrations.ui };
+        allowed.push("mcp__ui");
+      }
       // dweb network daemon (status / repo / opencode model access) via
       // server/drivers/dweb-proxy.ts — points at the configured dweb instance
       if (turn.integrations?.dweb) {
@@ -582,7 +587,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             }
             for (const b of Array.isArray(msg.content) ? msg.content : []) {
               if (b.type === "tool_use") {
-                emit({ ...base(threadId, turnId), type: "item.started", itemType: "tool", itemId: b.id, title: b.name });
+                emit({
+                  ...base(threadId, turnId),
+                  type: "item.started",
+                  itemType: "tool",
+                  itemId: b.id,
+                  title: b.name,
+                  arguments: parseJsonObject(b.input),
+                });
               }
             }
             if (msg.usage) {
@@ -598,7 +610,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           case "user":
             for (const b of Array.isArray(o.message?.content) ? o.message.content : []) {
               if (b.type === "tool_result") {
-                emit({ ...base(threadId, turnId), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error });
+                const result = toolResultContentText(b.content);
+                emit({
+                  ...base(threadId, turnId),
+                  type: "item.completed",
+                  itemType: "tool",
+                  itemId: b.tool_use_id,
+                  ok: !b.is_error,
+                  status: b.is_error ? "error" : "complete",
+                  result,
+                });
               }
             }
             break;
@@ -703,6 +724,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           computerMcp: true,
           composioMcp: true,
           phoneMcp: true,
+          uiMcp: true,
           images: true,
           effortLevels: ["low", "medium", "high", "xhigh", "max"],
           localComputerMcp: config.permissionMode !== "bypassPermissions",

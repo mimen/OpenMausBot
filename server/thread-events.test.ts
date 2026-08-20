@@ -99,6 +99,32 @@ describe("readThreadEvents", () => {
     expect(page.total).toEqual({ runtime: 3, native: 2 });
   });
 
+  it("keeps component.shown events with tool arguments", () => {
+    const eventsDir = tmp();
+    const nativeDir = tmp();
+    writeFileSync(
+      join(eventsDir, "t1.ndjson"),
+      line(
+        runtime({
+          eventId: "c1",
+          type: "component.shown",
+          createdAt: "2026-08-17T10:00:00.000Z",
+          name: "show_todoist_tasks",
+          callId: "call-1",
+          result: "on screen",
+          status: "shown",
+          arguments: { title: "Test", tasks: [{ id: "6hJCfm66Hh5Q4wqv", content: "A", isCompleted: false, url: null, due: null }] },
+        }),
+      ),
+    );
+    const page = readThreadEvents({ eventsDir, nativeDir, threadId: "t1" });
+    expect(page.entries).toHaveLength(1);
+    expect(page.entries[0]).toMatchObject({
+      kind: "runtime",
+      data: { type: "component.shown", name: "show_todoist_tasks", callId: "call-1" },
+    });
+  });
+
   it("keeps walking backward when a corrupt tail record would otherwise consume the limit", () => {
     const eventsDir = tmp();
     const nativeDir = tmp();

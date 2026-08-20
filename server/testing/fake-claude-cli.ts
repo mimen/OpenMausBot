@@ -128,12 +128,12 @@ process.stdin.on("end", () => {
     message: {
       content: [
         { type: "text", text: "hello from fake claude" },
-        { type: "tool_use", id: "tu-1", name: "Bash" },
+        { type: "tool_use", id: "tu-1", name: "Bash", input: { command: "ls" } },
       ],
       usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 },
     },
   });
-  out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu-1", is_error: false }] } });
+  out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tu-1", is_error: false, content: [{ type: "text", text: "ok" }, { type: "image", source: { type: "base64", media_type: "image/png", data: "AA==" } }] }] } });
   out({ type: "result", is_error: false, stop_reason: "end_turn", total_cost_usd: 0.01, usage: { input_tokens: 10, cache_read_input_tokens: 2, output_tokens: 5 } });
   process.exit(0);
 });

@@ -114,8 +114,10 @@ describe("Antigravity turns (fake CLI)", () => {
     const session = recorder.events.find((e) => e.type === "session.started")!;
     expect((session as any).sessionId).toBe("conv-fake-123");
 
-    const tool = recorder.events.find((e) => e.type === "item.completed" && (e as any).itemType === "tool")!;
-    expect((tool as any).ok).toBe(true);
+    const toolStarted = recorder.events.find((e) => e.type === "item.started" && e.itemType === "tool");
+    expect(toolStarted).toMatchObject({ title: "write_to_file", arguments: { path: "note.txt" } });
+    const tool = recorder.events.find((e) => e.type === "item.completed" && e.itemType === "tool");
+    expect(tool).toMatchObject({ ok: true, status: "complete", result: '{"bytes":4}' });
 
     const usage = recorder.events.find((e) => e.type === "thread.token-usage.updated")!;
     expect(usage).toMatchObject({ input: 105, output: 20 });

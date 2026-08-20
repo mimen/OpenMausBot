@@ -218,6 +218,10 @@ describe("ACP turns (fake CLI)", () => {
     expect(recorder.events.every((e) => e.turnId === turnId && e.provider === "grokAgent")).toBe(true);
     const usage = recorder.events.find((e) => e.type === "thread.token-usage.updated")!;
     expect(usage).toMatchObject({ input: 10, output: 5 });
+    const toolStarted = recorder.events.find((e) => e.type === "item.started" && e.itemType === "tool");
+    expect(toolStarted).toMatchObject({ title: "run", arguments: { command: "echo hi" } });
+    const toolDone = recorder.events.find((e) => e.type === "item.completed" && e.itemType === "tool");
+    expect(toolDone).toMatchObject({ ok: true, status: "complete", result: '{"stdout":"hi"}' });
     const text = recorder.events.find((e) => e.type === "item.completed" && (e as any).itemType === "assistant_text")!;
     expect((text as any).text).toBe("hello from fake acp");
     const done = recorder.events.at(-1)!;

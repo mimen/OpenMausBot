@@ -44,7 +44,11 @@ const dump = () => {
 };
 
 const finishTurn = () => {
-  notify("item/completed", { item: { id: "i1", type: "commandExecution", status: "completed" } });
+  if (mode === "web-search") {
+    notify("item/completed", { item: { id: "i1", type: "webSearch", status: "completed", query: "openmaus", result: ["result-a"] } });
+  } else {
+    notify("item/completed", { item: { id: "i1", type: "commandExecution", status: "completed", aggregatedOutput: "file-a\nfile-b" } });
+  }
   if (mode === "stream") {
     // token deltas, then the whole message — the driver must not double-emit
     notify("item/agentMessage/delta", { itemId: "m1", delta: "done from " });
@@ -133,7 +137,12 @@ process.stdin.on("data", (chunk) => {
           break;
         }
         out({ jsonrpc: "2.0", id: msg.id, result: { ok: true } });
-        notify("item/started", { item: { id: "i1", type: "commandExecution", command: "ls -la" } });
+        notify("item/started", {
+          item:
+            mode === "web-search"
+              ? { id: "i1", type: "webSearch", query: "openmaus" }
+              : { id: "i1", type: "commandExecution", command: "ls -la" },
+        });
         if (mode === "approval") {
           out({ jsonrpc: "2.0", id: 100, method: "execCommandApproval", params: { command: "rm -rf scratch" } });
           // turn continues from the approval response handler above

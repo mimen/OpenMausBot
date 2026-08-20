@@ -20,6 +20,7 @@ import type {
   SendTurnInput,
 } from "../contracts.ts";
 import { newEventId, newId } from "../contracts.ts";
+import { parseJsonObject, stringifyJsonResult } from "../json.ts";
 import { appendNative } from "./native.ts";
 
 const DRIVER_KIND = "boxAgent";
@@ -127,6 +128,7 @@ export const BoxAgentDriver: ProviderDriver<BoxAgentConfig> = {
       // poll events + run status until the prompt settles
       (async () => {
         const seen = new Set<string>();
+        const startedTools = new Set<string>();
         const startedAt = Date.now();
         let lastText = "";
         try {
@@ -154,13 +156,30 @@ export const BoxAgentDriver: ProviderDriver<BoxAgentConfig> = {
                   emit({ ...base(threadId, turnId), type: "content.delta", streamKind: "assistant_text", delta });
                 }
               } else if (/tool|command|exec|browse/i.test(kind)) {
-                emit({
-                  ...base(threadId, turnId),
-                  type: "item.started",
-                  itemType: "tool",
-                  itemId: id,
-                  title: String(ev.title ?? ev.command ?? kind).slice(0, 80),
-                });
+                const itemId = String(ev.toolCallId ?? ev.tool_call_id ?? ev.data?.toolCallId ?? ev.data?.tool_call_id ?? id);
+                if (!startedTools.has(itemId)) {
+                  startedTools.add(itemId);
+                  emit({
+                    ...base(threadId, turnId),
+                    type: "item.started",
+                    itemType: "tool",
+                    itemId,
+                    title: String(ev.title ?? ev.command ?? kind).slice(0, 80),
+                    arguments: parseJsonObject(ev.arguments ?? ev.input ?? ev.data?.arguments ?? ev.data?.input),
+                  });
+                }
+                if (/complete|finish|done|success|fail|error/i.test(kind)) {
+                  const ok = !/fail|error/i.test(kind);
+                  emit({
+                    ...base(threadId, turnId),
+                    type: "item.completed",
+                    itemType: "tool",
+                    itemId,
+                    ok,
+                    status: ok ? "complete" : "error",
+                    result: stringifyJsonResult(ev.result, ev.output, ev.data?.result, ev.data?.output, ev.error),
+                  });
+                }
               }
               // shape-drift backstop: without a promptId the status poll
               // below can never see a terminal state, so settle off the

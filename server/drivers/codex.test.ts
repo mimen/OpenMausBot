@@ -101,6 +101,15 @@ describe("CodexDriver turns (fake app-server)", () => {
       input: 7,
       output: 3,
     });
+    expect(recorder.events.find((e) => e.type === "item.started" && e.itemType === "tool")).toMatchObject({
+      title: "shell",
+      arguments: { command: "ls -la" },
+    });
+    expect(recorder.events.find((e) => e.type === "item.completed" && e.itemType === "tool")).toMatchObject({
+      ok: true,
+      status: "complete",
+      result: "file-a\nfile-b",
+    });
     // codex reports the THREAD total; the driver turns it into this turn's
     // figure so the harness never sums a running total
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: true, usage: { input: 7, output: 3 } });
@@ -261,6 +270,22 @@ describe("CodexDriver turns (fake app-server)", () => {
     expect(seen.argv).toContain("model_providers.unsloth.base_url=\"http://127.0.0.1:8888/v1\"");
     expect(JSON.stringify(seen.argv)).not.toContain("unsloth-secret");
     expect(seen.env.OPENMAUSBOT_LOCAL_UNSLOTH_API_KEY).toBe("unsloth-secret");
+  });
+
+  it("completes web-search items with arguments, result, and status", async () => {
+    await create({ mode: "web-search" });
+    await instance.adapter.sendTurn({ threadId: "t-web-search", text: "search" });
+    await recorder.until((event) => event.type === "turn.completed");
+
+    expect(recorder.events.find((event) => event.type === "item.started" && event.itemType === "tool")).toMatchObject({
+      title: "web_search",
+      arguments: { query: "openmaus" },
+    });
+    expect(recorder.events.find((event) => event.type === "item.completed" && event.itemType === "tool")).toMatchObject({
+      ok: true,
+      status: "complete",
+      result: '["result-a"]',
+    });
   });
 
   it("streams agentMessage deltas without re-emitting the settled text", async () => {

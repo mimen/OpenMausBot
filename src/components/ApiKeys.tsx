@@ -6,7 +6,7 @@ import { Check, CircleHelp, ExternalLink, Loader2, TriangleAlert } from "lucide-
 import { api, useStore, type ConfigStatus } from "@/state/store";
 import { cn } from "@/lib/cn";
 
-export type ConfigSection = "composio" | "box" | "opencodeGo";
+export type ConfigSection = "composio" | "box" | "opencodeGo" | "todoist";
 
 const SECTIONS: Record<
   ConfigSection,
@@ -18,12 +18,14 @@ const SECTIONS: Record<
   },
   box: { body: (v) => ({ box: { token: v } }), flag: (c) => c.box.configured },
   opencodeGo: { body: (v) => ({ opencodeGo: { apiKey: v } }), flag: (c) => c.opencodeGo?.configured ?? false },
+  todoist: { body: (v) => ({ todoist: { token: v } }), flag: (c) => c.todoist?.configured ?? false },
 };
 
-const ELECTRON_CREDENTIAL: Record<ConfigSection, "composioApiKey" | "boxToken" | "opencodeGoApiKey"> = {
+const ELECTRON_CREDENTIAL: Record<ConfigSection, "composioApiKey" | "boxToken" | "opencodeGoApiKey" | "todoistToken"> = {
   composio: "composioApiKey",
   box: "boxToken",
   opencodeGo: "opencodeGoApiKey",
+  todoist: "todoistToken",
 };
 
 const CREDENTIALS: Record<
@@ -61,6 +63,14 @@ const CREDENTIALS: Record<
     description: "Run OpenCode Go models through the maintained OpenCode CLI and ACP.",
     href: "https://opencode.ai/docs/go/",
     linkLabel: "Open OpenCode Go setup guide",
+    optional: true,
+  },
+  todoist: {
+    label: "Todoist API token",
+    placeholder: "Paste your Todoist API token",
+    description: "Load exact tasks into interactive cards and complete them only when you click in the card.",
+    href: "https://app.todoist.com/app/settings/integrations/developer",
+    linkLabel: "Open Todoist developer settings",
     optional: true,
   },
 };
