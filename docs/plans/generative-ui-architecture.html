@@ -166,7 +166,7 @@
         <h1>Generative UI without a cloud control plane.</h1>
         <p class="lede">A private MCP tool surface lets only OpenMaus bots ask for typed components. The harness validates and persists those calls, React renders them from SQLite, and Electron owns trusted human actions such as completing a Todoist task.</p>
       </div>
-      <div class="status">Foundation implemented · action feedback proposed</div>
+      <div class="status">Seven-component suite implemented · activation gated</div>
     </div>
     <div class="path">Plan: /Users/mimen/Programming/Repos/OpenMausBot/docs/plans/generative-ui-architecture.html</div>
   </header>
@@ -334,11 +334,11 @@ Electron renderer: click → preload IPC → Electron main → read-only authori
   </section>
 
   <section class="section">
-    <div class="section-head"><div class="section-index">06</div><h2>Action feedback: the missing loop</h2></div>
-    <p class="intro">Today the card updates deterministically, but the provider session is not reliably informed that the person acted. That is why a follow-up such as “how about now” can trigger a redundant Todoist query. The fix should be a general component-action protocol, not a Todoist-only prompt.</p>
+    <div class="section-head"><div class="section-index">06</div><h2>Action feedback: the implemented loop</h2></div>
+    <p class="intro">A trusted UI action now updates the component, writes a durable public event, appears visibly in the thread, and reaches the originating bot without a manual “how about now” prompt. Provider-specific delivery cursors, restart recovery, room ownership, busy-thread batching, and bounded inferred follow-up turns are implemented and tested.</p>
     <div class="grid-2">
-      <article class="card future"><h3>Proposed durable event</h3><p>Persist a <code>ComponentActionEvent</code> beside the component:</p><ul><li><code>actionId</code> and idempotency key</li><li><code>threadId</code>, <code>callId</code>, component and action names</li><li>public entity label and bounded result</li><li>status: started, succeeded, failed</li><li>trusted origin: Electron main</li><li>provider-context delivery cursor</li></ul></article>
-      <article class="card future"><h3>Proposed bot awareness</h3><ol><li>Electron succeeds and writes its trusted receipt.</li><li>Server reconciles component state and appends the action event.</li><li>The chat shows a deterministic “Completed in Todoist” activity immediately.</li><li>Every unread action event is injected into a system-owned context block, even when resuming a provider cursor.</li><li>A default inferred follow-up turn lets the bot acknowledge, re-prioritize, explain, or render the next useful component.</li></ol></article>
+      <article class="card safe"><h3>Durable action event</h3><p>OpenMaus persists a <code>ComponentActionEvent</code> beside the component:</p><ul><li><code>actionId</code> and idempotency key</li><li><code>threadId</code>, <code>callId</code>, component and action names</li><li>public entity label and bounded result</li><li>status: started, succeeded, failed</li><li>trusted origin</li><li>per-provider delivery cursor and follow-up lease</li></ul></article>
+      <article class="card safe"><h3>Automatic bot awareness</h3><ol><li>The trusted action succeeds and writes its receipt.</li><li>Server reconciles component state and appends the action event.</li><li>The chat shows a deterministic activity immediately.</li><li>Unread events enter a system-owned context block, including resumed provider cursors.</li><li>A default inferred follow-up lets the bot acknowledge, re-prioritize, explain, or render the next useful component.</li></ol></article>
     </div>
     <div class="flow"><pre>Human click
   → Electron main closes remote task exactly once
@@ -354,7 +354,7 @@ Default inferred follow-up turn:
   model selects the useful response: acknowledge, re-prioritize, or render the next component
   action capability is consumed, so the remote action cannot repeat
   tools are limited to the next safe UX step</pre></div>
-    <div class="callout"><strong>Recommendation:</strong> make the inferred follow-up the default. The durable event guarantees truth; the model turns that truth into the best next experience. It may acknowledge, update the plan, collapse a resolved item, surface the next decision, or render a new component. Bound the action capabilities, not the intelligence.</div>
+    <div class="callout"><strong>Implemented behavior:</strong> inferred follow-up is the default. The durable event guarantees truth; the model turns that truth into the best next experience. It may acknowledge, update the plan, collapse a resolved item, surface the next decision, or render a new component. Action capabilities remain consumed and bounded while inference stays fully capable.</div>
   </section>
 
   <section class="section">
@@ -431,7 +431,7 @@ Default inferred follow-up turn:
   </section>
 
   <footer>
-    <strong>Status:</strong> the generative UI foundation and native Todoist row are implemented in the fork. The general component-action event and automatic bot-context delivery are the recommended next contribution slice.
-    <br>Evidence: <a target="_blank" rel="noopener" href="file:///Users/mimen/Programming/Worktrees/openmaus-generative-ui/docs/screenshots/generative-ui/06-todoist-native-row.png">native Todoist row screenshot</a> · <a target="_blank" rel="noopener" href="https://github.com/mimen/OpenMausBot/commit/2630750b2b21732743b3ab7467f1b1ded57e7663">hardened foundation commit</a>
+    <strong>Status:</strong> the generative UI foundation, seven specialist components, local supplement ledger, ReplyChips, structured bridge schemas, durable component-action events, and automatic bot-context follow-ups are implemented and validated in the fork. Live activation against Milad's existing OpenMaus data remains intentionally gated.
+    <br>Evidence: <a target="_blank" rel="noopener" href="file:///Users/mimen/Programming/Worktrees/openmaus-component-suite/docs/screenshots/component-gallery/component-gallery-desktop.png">desktop full gallery</a> · <a target="_blank" rel="noopener" href="file:///Users/mimen/Programming/Worktrees/openmaus-component-suite/docs/screenshots/component-gallery/component-gallery-narrow.png">390px full gallery</a> · <a target="_blank" rel="noopener" href="https://github.com/mimen/OpenMausBot/tree/feat/openmaus-component-suite">component suite branch</a>
   </footer>
 </main>
