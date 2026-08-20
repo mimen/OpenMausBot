@@ -111,12 +111,41 @@
   .todo-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 5px; color: var(--muted); font-size: 11px; }
   .todo-due { color: var(--red); }
   .tag { display: inline-block; border: 1px solid var(--line); padding: 2px 6px; color: var(--muted); font: 11px ui-monospace, monospace; }
+  .legend { margin: 18px 0 0 90px; display: flex; flex-wrap: wrap; gap: 10px; }
+  .legend-item { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 2px; }
+  .legend-swatch.upstream { background: var(--muted); opacity: .55; }
+  .legend-swatch.modified { background: var(--blue); }
+  .legend-swatch.added { background: var(--red); }
+  .seam-map { margin: 18px 0 0 90px; display: grid; grid-template-columns: minmax(0, .9fr) 72px minmax(0, 1.1fr); gap: 14px; align-items: stretch; }
+  .seam-column { border: 1px solid var(--line); background: var(--panel); padding: 18px; }
+  .seam-column h3 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .seam-stack { display: grid; gap: 9px; margin-top: 13px; }
+  .seam-node { border: 1px solid var(--line); padding: 10px 11px; font-size: 12px; }
+  .seam-node b { display: block; margin-bottom: 2px; color: var(--ink); }
+  .seam-node span { color: var(--muted); }
+  .seam-node.upstream { border-left: 4px solid color-mix(in srgb, var(--muted) 55%, transparent); background: var(--panel-2); }
+  .seam-node.modified { border-left: 4px solid var(--blue); background: var(--blue-soft); }
+  .seam-node.added { border-left: 4px solid var(--red); background: var(--red-soft); }
+  .seam-arrow { display: grid; place-items: center; color: var(--red); font: 800 28px/1 ui-monospace, monospace; }
+  .ownership { margin-left: 90px; display: grid; gap: 10px; }
+  .ownership-row { display: grid; grid-template-columns: 96px minmax(190px, .8fr) minmax(0, 1.5fr); gap: 12px; align-items: start; border-bottom: 1px solid var(--line); padding: 11px 0; }
+  .ownership-badge { display: inline-flex; justify-content: center; padding: 3px 7px; border-radius: 4px; font: 700 10px ui-monospace, monospace; letter-spacing: .05em; text-transform: uppercase; }
+  .ownership-badge.upstream { background: var(--panel-2); color: var(--muted); }
+  .ownership-badge.modified { background: var(--blue-soft); color: var(--blue); }
+  .ownership-badge.added { background: var(--red-soft); color: var(--red); }
+  .ownership-row code { overflow-wrap: anywhere; }
+  .ownership-row p { margin: 0; color: var(--muted); font-size: 12.5px; }
   footer { margin-top: 70px; border-top: 2px solid var(--ink); padding-top: 18px; color: var(--muted); font-size: 13px; }
   @media (max-width: 860px) {
     .mast-grid, .thesis { grid-template-columns: 1fr; }
     .thesis-copy { border-right: 0; border-bottom: 1px solid var(--line); }
     .grid-2, .grid-3 { grid-template-columns: 1fr; }
-    .intro, .grid-2, .grid-3, .flow, .table-wrap, .sequence, .callout { margin-left: 0; }
+    .intro, .grid-2, .grid-3, .flow, .table-wrap, .sequence, .callout, .legend, .seam-map, .ownership { margin-left: 0; }
+    .seam-map { grid-template-columns: 1fr; }
+    .seam-arrow { transform: rotate(90deg); min-height: 34px; }
+    .ownership-row { grid-template-columns: 90px minmax(0, 1fr); }
+    .ownership-row p { grid-column: 1 / -1; }
     .section-head { grid-template-columns: 42px minmax(0, 1fr); }
   }
 </style>
@@ -157,6 +186,49 @@
         <div class="pipe-node"><b>React + Electron</b><span>Replays the component. Browser is read-only; Electron owns trusted action IPC.</span></div>
       </div>
     </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">00</div><h2>Exactly where the fork begins</h2></div>
+    <p class="intro">OpenMaus already had a local harness, provider adapters, runtime events, SQLite messages, React chat rendering, Electron IPC, and encrypted credentials. The fork did not replace that architecture. It added one vertical component lane through those existing extension points.</p>
+    <div class="legend">
+      <span class="legend-item"><span class="legend-swatch upstream"></span>Existing upstream, used as-is</span>
+      <span class="legend-item"><span class="legend-swatch modified"></span>Existing upstream file, extended by the fork</span>
+      <span class="legend-item"><span class="legend-swatch added"></span>New file or subsystem added by the fork</span>
+    </div>
+    <div class="seam-map">
+      <div class="seam-column">
+        <h3>Upstream OpenMaus <span class="ownership-badge upstream">existing</span></h3>
+        <div class="seam-stack">
+          <div class="seam-node upstream"><b>Provider adapters</b><span>Claude, Codex, ACP, Antigravity, Box; already knew how to mount per-turn MCP integrations.</span></div>
+          <div class="seam-node upstream"><b>Runtime EventBus</b><span>Already folded provider events into one harness event stream.</span></div>
+          <div class="seam-node upstream"><b>Store + SQLite</b><span>Already persisted bots, tasks, messages, and replayable conversation history.</span></div>
+          <div class="seam-node upstream"><b>React chat</b><span>Already switched on message kinds and rendered chat history.</span></div>
+          <div class="seam-node upstream"><b>Electron shell</b><span>Already provided preload IPC, safeStorage, local server startup, and desktop-only capabilities.</span></div>
+        </div>
+      </div>
+      <div class="seam-arrow">→</div>
+      <div class="seam-column">
+        <h3>Fork seam <span class="ownership-badge added">our lane</span></h3>
+        <div class="seam-stack">
+          <div class="seam-node added"><b>Private UI MCP proxy</b><span>New per-turn tool server, mounted through the existing integration slot.</span></div>
+          <div class="seam-node added"><b>Typed gallery + show pipeline</b><span>New registry, schemas, enrichment, correlation, evidence, and Todoist adapter.</span></div>
+          <div class="seam-node modified"><b>Component message kind</b><span>Existing runtime/store/chat seams extended to carry one new public envelope.</span></div>
+          <div class="seam-node added"><b>Compiled UI renderers</b><span>New record, metrics, checklist, quote, and Todoist React components.</span></div>
+          <div class="seam-node added"><b>Electron action boundary</b><span>New Todoist IPC, one-time gate, receipt, and reconciliation using existing preload and safeStorage machinery.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="ownership" style="margin-top:22px">
+      <div class="ownership-row"><span class="ownership-badge upstream">upstream</span><code>ProviderRegistry, EventBus, Store, ChatView, Electron shell</code><p>These major subsystems already existed. The fork deliberately builds through them rather than creating a second app or agent runtime.</p></div>
+      <div class="ownership-row"><span class="ownership-badge modified">modified</span><code>server/index.ts, contracts.ts, thread-events.ts, store.ts, message-db.ts</code><p>Small seams were added: mount <code>integrations.ui</code>, preserve structured tool identity, persist <code>kind: component</code>, and expose it through the existing bot API.</p></div>
+      <div class="ownership-row"><span class="ownership-badge modified">modified</span><code>server/drivers/{claude,codex,acp,antigravity,boxagent}</code><p>Each adapter declares <code>uiMcp: true</code> and forwards structured tool arguments/results. Their model transport remains upstream.</p></div>
+      <div class="ownership-row"><span class="ownership-badge added">added</span><code>server/ui/*, server/drivers/ui-proxy.ts</code><p>This is the reusable generative UI backend: component registry, private MCP surface, validation, Todoist enrichment, provider correlation, replay tests, and evidence.</p></div>
+      <div class="ownership-row"><span class="ownership-badge added">added</span><code>src/components/ui/*</code><p>This is the compiled renderer library. It is the visual half of the seam and can grow independently of provider adapters.</p></div>
+      <div class="ownership-row"><span class="ownership-badge added">added</span><code>electron/todoist-completion.mjs</code><p>This is one integration-specific action adapter. The general component protocol does not depend on Todoist.</p></div>
+      <div class="ownership-row"><span class="ownership-badge modified">modified</span><code>electron/main.mjs, preload.cjs, workspace-credentials.mjs</code><p>Existing Electron IPC and credential infrastructure were extended with the Todoist action, encrypted field, private environment handling, and development server-port selection.</p></div>
+    </div>
+    <div class="callout"><strong>The seam in one sentence:</strong> the fork adds a private MCP integration that produces a new typed message kind, then plugs that message into OpenMaus's existing event, persistence, React, and Electron extension points.</div>
   </section>
 
   <section class="section">
@@ -291,6 +363,34 @@ Optional immediate acknowledgment turn:
       <article class="card safe"><h3>Packaged application</h3><ul><li>Electron main process</li><li>Bundled harness server as an Electron utility process</li><li>Compiled renderer assets served by the harness</li><li>SQLite and encrypted credentials on the local machine</li><li>No Vite server</li><li>No hosted generative-UI service</li></ul></article>
     </div>
     <div class="callout"><strong>External dependencies:</strong> the chosen model provider still receives model turns, and Todoist receives task reads/writes. The UI protocol, persistence, rendering, and action boundary remain local.</div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div class="section-index">07B</div><h2>Where credentials live</h2></div>
+    <p class="intro">OpenMaus separates configuration state from secret material. The file path is visible; the credential values are not.</p>
+    <div class="grid-2">
+      <article class="card safe"><h3>Encrypted desktop credential store</h3><p><code>/Users/mimen/Library/Application Support/openmausbot/credentials.bin</code></p><ul><li>Mode 0600 on this Mac</li><li>Encrypted and decrypted through Electron <code>safeStorage</code></li><li>Backed by the macOS Keychain protection available to this user</li><li>Can hold Todoist, xAI, Box, TTS, OpenCode Go, and Composio credential fields</li></ul></article>
+      <article class="card core"><h3>Non-secret configuration</h3><p><code>~/.openmausbot/config.json</code> stores settings and configured/not-configured state. A saved plaintext credential is migrated into <code>credentials.bin</code> and deleted from config on desktop boot.</p><p>The renderer receives only status such as “Connected,” never the token.</p></article>
+    </div>
+    <div class="sequence" style="margin-top:18px">
+      <article class="step"><div><h3>Electron main decrypts</h3><p>Only the desktop main process calls <code>safeStorage</code>. Renderer JavaScript cannot read <code>credentials.bin</code> directly.</p></div></article>
+      <article class="step"><div><h3>The local server receives an explicit secret</h3><p>Electron launches the bundled server with only the credential variables that server needs. In development, the current launcher reads Todoist from 1Password and supplies it to the local Electron/server processes.</p></div></article>
+      <article class="step"><div><h3>Private variables are captured and deleted</h3><p>Electron and the harness capture <code>TODOIST_API_TOKEN</code> at startup, remove it from <code>process.env</code>, and retain it only in private process memory.</p></div></article>
+      <article class="step"><div><h3>Child processes are scrubbed</h3><p>Provider CLIs, login-shell probes, containers, VPS helpers, diagnostics, and other generic children are launched through the private-environment scrubber, so they do not inherit the Todoist token.</p></div></article>
+    </div>
+    <div class="table-wrap" style="margin-top:18px">
+      <table>
+        <thead><tr><th>Credential class</th><th>Location</th><th>Who can read it</th></tr></thead>
+        <tbody>
+          <tr><td>Todoist and desktop service tokens</td><td><code>~/Library/Application Support/openmausbot/credentials.bin</code></td><td>Electron main through OS-backed safeStorage</td></tr>
+          <tr><td>Current development Todoist token</td><td>Read at launch from <code>op://Sol/Todoist Env/notesPlain</code></td><td>Electron main and harness private memory; removed from ambient env</td></tr>
+          <tr><td>OpenMaus loop webhook secrets</td><td><code>~/.openmausbot/webhook-secrets.json</code>, mode 0600</td><td>The local delivery helper and webhook receiver</td></tr>
+          <tr><td>Claude/claudex provider credentials</td><td>CCS launcher, 1Password, and provider-specific local auth</td><td>The provider launcher; not the generative UI registry</td></tr>
+          <tr><td>Component transcript</td><td><code>~/.openmausbot/messages.db</code> or isolated <code>OMB_DATA_DIR</code></td><td>Contains public component state only; never credential or action capability material</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout"><strong>Development caveat:</strong> <code>OMB_DATA_DIR</code> isolates harness data and SQLite, but Electron's <code>credentials.bin</code> follows <code>app.getPath("userData")</code>. A truly isolated developer credential store should set Electron's user-data path before <code>CREDENTIALS_FILE</code> is computed. The current test launch avoids saving the Todoist token and supplies it from 1Password at process birth.</div>
   </section>
 
   <section class="section">
