@@ -1,6 +1,7 @@
 import { Footprints, ShieldAlert } from "lucide-react";
 import { useId } from "react";
 
+import { humanizeTimeZone } from "@/lib/ui/format";
 import type { WeekCalendar as WeekCalendarData } from "../../../server/ui/schemas.ts";
 import { ActionFooter, GeneralRow, LoopFrame, ReplyChips, WeekStrip } from "./grammar";
 import { UiFrame } from "./frame";
@@ -9,7 +10,7 @@ export function WeekCalendar({ data, threadId }: { data: WeekCalendarData; threa
   const walkersId = useId();
   const walkers = data.days.flatMap((day) => (day.walkers ?? []).map((walker) => ({ ...walker, day: day.label })));
   return (
-    <UiFrame title={data.title} caption={`Week of ${data.weekStart} · ${data.timeZone}`}>
+    <UiFrame title={data.title} caption={`Week of ${data.weekStart} · ${humanizeTimeZone(data.timeZone)}`}>
       {data.frame ? <LoopFrame frame={data.frame} /> : null}
       <div className={data.frame ? "mt-4" : ""}>
         <WeekStrip days={data.days} />

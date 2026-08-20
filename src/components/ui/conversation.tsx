@@ -2,6 +2,7 @@ import { FilePenLine, MessageCircleMore, ShieldCheck } from "lucide-react";
 import { useId } from "react";
 
 import { cn } from "@/lib/cn";
+import { humanizeSurface } from "@/lib/ui/format";
 import type { Conversation as ConversationData } from "../../../server/ui/schemas.ts";
 import { ActionFooter, LoopFrame, ReplyChips } from "./grammar";
 import { UiBadge, UiFrame } from "./frame";
@@ -13,12 +14,18 @@ const STAKE_TONE = {
   critical: "negative",
 } as const;
 
+export function formatConversationTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Time unavailable";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
 export function Conversation({ data, threadId }: { data: ConversationData; threadId: string }) {
   const draftId = useId();
   return (
     <UiFrame
       title={data.title}
-      caption={`${data.surface} · ${data.age}`}
+      caption={`${humanizeSurface(data.surface)} · ${data.age}`}
       action={<UiBadge tone={STAKE_TONE[data.stakes]}>{data.stakes} stakes</UiBadge>}
     >
       {data.frame ? <LoopFrame frame={data.frame} /> : null}
@@ -37,7 +44,15 @@ export function Conversation({ data, threadId }: { data: ConversationData; threa
               bubble.direction === "outbound" ? "bg-bubble-user text-ink" : "bg-inset text-ink",
             )}>
               <p className="whitespace-pre-wrap text-[12.5px] leading-5 [overflow-wrap:anywhere]">{bubble.text}</p>
-              <time dateTime={bubble.at} className="mt-1 block text-[10px] tabular-nums text-ink-secondary">{new Date(bubble.at).toLocaleString()}</time>
+              <time
+                dateTime={bubble.at}
+                className={cn(
+                  "mt-1 block text-[10.5px] font-medium tabular-nums",
+                  bubble.direction === "outbound" ? "text-ink" : "text-ink-secondary",
+                )}
+              >
+                {formatConversationTime(bubble.at)}
+              </time>
             </div>
           </li>
         ))}

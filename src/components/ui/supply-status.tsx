@@ -73,7 +73,7 @@ export function SupplyStatus({ data, threadId }: { data: SupplyStatusData; threa
       ) : null}
       <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Provenance">
         {data.provenance.map((item) => (
-          <span key={`${item.label}-${item.value ?? ""}`} className="rounded-md bg-raised px-1.5 py-1 text-[10.5px] text-ink-secondary">
+          <span key={`${item.label}-${item.value ?? ""}`} className="rounded-md border border-hairline/70 bg-raised px-1.5 py-1 text-[10.5px] text-ink-secondary">
             {item.label}{item.value ? ` · ${item.value}` : ""}
           </span>
         ))}

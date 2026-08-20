@@ -1,6 +1,7 @@
 import { Circle, Loader2, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { humanizeTimeZone } from "@/lib/ui/format";
 import { api, type ComponentCall } from "@/state/store";
 import type { SupplementStack as SupplementStackData } from "../../../server/ui/schemas.ts";
 import { ActionFooter, GeneralRow } from "./grammar";
@@ -9,6 +10,14 @@ import { UiBadge, UiFrame } from "./frame";
 const PERIOD_LABELS = { am: "Morning", pm: "Evening", situational: "Situational" } as const;
 
 export type SupplementToggleState = { checked: boolean; pending: boolean; baseChecked: boolean; error?: string };
+export const SUPPLEMENT_TOGGLE_ERROR = "Couldn’t update this supplement. Try again.";
+
+export function priorSupplementChecked(
+  overlay: SupplementToggleState | undefined,
+  hydratedChecked: boolean,
+): boolean {
+  return overlay?.checked ?? hydratedChecked;
+}
 
 export function reconcileSupplementOverlays(
   current: Record<string, SupplementToggleState>,
@@ -46,7 +55,7 @@ export function SupplementStack({
   const completed = normalItems.filter((item) => state[item.id]?.checked ?? (item.checked === true)).length;
 
   const toggle = async (itemId: string, checked: boolean) => {
-    const previous = state[itemId]?.checked === true;
+    const previous = priorSupplementChecked(state[itemId], serverChecked.get(itemId) ?? false);
     if (state[itemId]?.pending || previous === checked) return;
     setState((current) => ({ ...current, [itemId]: { checked, pending: true, baseChecked: previous } }));
     try {
@@ -64,13 +73,14 @@ export function SupplementStack({
       });
       setState((current) => ({ ...current, [itemId]: { checked, pending: false, baseChecked: previous } }));
     } catch (error) {
+      console.error("[supplement-stack] toggle failed", error);
       setState((current) => ({
         ...current,
         [itemId]: {
           checked: previous,
           pending: false,
           baseChecked: previous,
-          error: error instanceof Error ? error.message : String(error),
+          error: SUPPLEMENT_TOGGLE_ERROR,
         },
       }));
     }
@@ -79,7 +89,7 @@ export function SupplementStack({
   return (
     <UiFrame
       title={data.title}
-      caption={`${data.date} · ${data.timeZone} · regimen ${data.regimen.version}`}
+      caption={`${data.date} · ${humanizeTimeZone(data.timeZone)} · regimen ${data.regimen.version}`}
       action={<UiBadge tone={completed === normalItems.length && normalItems.length > 0 ? "positive" : "neutral"}>{completed} / {normalItems.length}</UiBadge>}
     >
       <div className="grid gap-5">
@@ -111,7 +121,7 @@ export function SupplementStack({
                     trailing={situational ? (
                       <span className="inline-flex items-center gap-1 text-[11px] text-ink-secondary"><Circle size={10} aria-hidden="true" />As needed</span>
                     ) : (
-                      <label className="inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] text-ink hover:bg-raised-hover focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+                      <label className="inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-lg border border-hairline/70 bg-raised px-2.5 py-1.5 text-[11.5px] text-ink hover:bg-raised-hover focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
                         <input
                           type="checkbox"
                           checked={row.checked}

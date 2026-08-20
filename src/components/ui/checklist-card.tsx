@@ -41,7 +41,7 @@ export function ChecklistCard({
               {item.done ? <Check size={10} /> : null}
             </span>
             <span className="min-w-0">
-              <span className={item.done ? "text-ink-secondary line-through" : "text-ink"}>{item.text}</span>
+              <span className={item.done ? "text-ink-secondary" : "text-ink"}>{item.text}</span>
               {item.note ? <span className="block text-[12px] text-ink-secondary">{item.note}</span> : null}
             </span>
           </li>

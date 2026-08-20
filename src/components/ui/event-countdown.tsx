@@ -1,6 +1,7 @@
 import { CheckCircle2, Clock3, ExternalLink, OctagonAlert } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 
+import { formatDateTimeInZone, humanizeTimeZone } from "@/lib/ui/format";
 import type { EventCountdown as EventCountdownData } from "../../../server/ui/schemas.ts";
 import { GeneralRow, LoopFrame } from "./grammar";
 import { UiBadge, UiFrame } from "./frame";
@@ -33,8 +34,15 @@ export function EventCountdown({ data }: { data: EventCountdownData }) {
   const timer = countdown(data.doorsAt, now);
   const completed = data.blockers.filter((blocker) => blocker.status === "completed");
   const open = data.blockers.filter((blocker) => blocker.status === "open");
+  const doors = formatDateTimeInZone(data.doorsAt, data.timeZone, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }) ?? "Time unavailable";
   return (
-    <UiFrame title={data.title} caption={`Doors · ${new Date(data.doorsAt).toLocaleString()} · ${data.timeZone}`} action={<UiBadge tone={open.length ? "caution" : "positive"}>{open.length} open</UiBadge>}>
+    <UiFrame title={data.title} caption={`Doors · ${doors} · ${humanizeTimeZone(data.timeZone)}`} action={<UiBadge tone={open.length ? "caution" : "positive"}>{open.length} open</UiBadge>}>
       <div className={timer.passed ? "rounded-xl bg-warning/12 px-3 py-3" : "rounded-xl bg-accent/10 px-3 py-3"} role="timer" aria-live="off">
         <div className="flex items-center gap-2">
           <Clock3 size={17} className="shrink-0 text-ink-secondary" aria-hidden="true" />
@@ -69,7 +77,7 @@ export function EventCountdown({ data }: { data: EventCountdownData }) {
       {data.draftReadyLinks.length ? (
         <nav className="mt-4 flex flex-wrap gap-2" aria-label="Draft-ready event links">
           {data.draftReadyLinks.map((link) => (
-            <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-raised px-2.5 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+            <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-hairline/70 bg-raised px-2.5 py-1.5 text-[11.5px] font-medium text-ink hover:bg-raised-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
               {link.label}<ExternalLink size={11} aria-hidden="true" />
             </a>
           ))}

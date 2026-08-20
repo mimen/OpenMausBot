@@ -4,7 +4,7 @@ import { cn } from "@/lib/cn";
 export type Tone = "neutral" | "positive" | "caution" | "negative";
 
 const TONES = {
-  neutral: "bg-raised text-ink-secondary",
+  neutral: "border border-hairline/70 bg-raised text-ink-secondary",
   positive: "bg-success/15 text-success",
   caution: "bg-warning/15 text-warning",
   negative: "bg-danger/15 text-danger",
@@ -26,7 +26,7 @@ export function UiFrame({
       {(title || action) && (
         <figcaption className="flex items-start justify-between gap-4 border-b border-hairline/40 px-4 py-3">
           <div className="min-w-0">
-            {title ? <p className="truncate text-[15px] font-semibold text-ink">{title}</p> : null}
+            {title ? <h2 className="truncate text-[15px] font-semibold text-ink">{title}</h2> : null}
             {caption ? <p className="mt-0.5 text-[13px] text-ink-secondary">{caption}</p> : null}
           </div>
           {action ? <div className="shrink-0">{action}</div> : null}

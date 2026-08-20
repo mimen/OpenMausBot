@@ -1,15 +1,29 @@
 import { CalendarCheck2, Scissors, TriangleAlert } from "lucide-react";
 
+import {
+  formatDateTimeInZone,
+  humanizeBookingRelation,
+  humanizeTimeZone,
+} from "@/lib/ui/format";
 import type { BookingSlot as BookingSlotData } from "../../../server/ui/schemas.ts";
 import { ActionFooter, GeneralRow, LoopFrame, ReplyChips } from "./grammar";
 import { UiFrame } from "./frame";
 
 export function BookingSlot({ data, threadId }: { data: BookingSlotData; threadId: string }) {
-  const start = new Date(data.candidate.startsAt);
-  const end = new Date(data.candidate.endsAt);
-  const slot = Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())
-    ? data.candidate.label
-    : `${start.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })} · ${start.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}–${end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+  const day = formatDateTimeInZone(data.candidate.startsAt, data.candidate.timeZone, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  const start = formatDateTimeInZone(data.candidate.startsAt, data.candidate.timeZone, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const end = formatDateTimeInZone(data.candidate.endsAt, data.candidate.timeZone, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const slot = day && start && end ? `${day} · ${start}–${end}` : data.candidate.label;
   return (
     <UiFrame title={data.title} caption={`Last cut ${data.lastCutAge} ago`}>
       {data.frame ? <LoopFrame frame={data.frame} /> : null}
@@ -19,7 +33,7 @@ export function BookingSlot({ data, threadId }: { data: BookingSlotData; threadI
           <div>
             <p className="text-[11px] font-medium text-ink-secondary">Candidate</p>
             <p className="mt-0.5 text-[16px] font-semibold leading-6 text-ink">{data.candidate.label}</p>
-            <p className="mt-0.5 text-[12.5px] tabular-nums text-ink-secondary">{slot} · {data.candidate.timeZone}</p>
+            <p className="mt-0.5 text-[12.5px] tabular-nums text-ink-secondary">{slot} · {humanizeTimeZone(data.candidate.timeZone)}</p>
           </div>
         </div>
       </section>
@@ -40,7 +54,7 @@ export function BookingSlot({ data, threadId }: { data: BookingSlotData; threadI
                 tone={event.relation === "overlap" ? "critical" : event.relation === "buffer" ? "healthy" : "neutral"}
                 leading={<CalendarCheck2 size={14} aria-hidden="true" />}
                 title={event.label}
-                metadata={<><span>{event.timing}</span><span>{event.relation}</span></>}
+                metadata={<><span>{event.timing}</span><span>{humanizeBookingRelation(event.relation)}</span></>}
               />
             ))}
           </div>

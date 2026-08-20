@@ -27,7 +27,7 @@ export function StatusBoard({ data }: { data: StatusBoardData }) {
             <section key={group.kind} aria-labelledby={`status-${group.kind}`}>
               <div className="mb-1.5 flex items-center gap-2">
                 <h3 id={`status-${group.kind}`} className="text-[12px] font-semibold text-ink">{group.label ?? GROUP_LABELS[group.kind]}</h3>
-                <span className="rounded-md bg-raised px-1.5 py-0.5 text-[10.5px] tabular-nums text-ink-secondary">{group.rows.length}</span>
+                <span className="rounded-md border border-hairline/70 bg-raised px-1.5 py-0.5 text-[10.5px] tabular-nums text-ink-secondary">{group.rows.length}</span>
               </div>
               <div className="divide-y divide-hairline/30">
                 {group.rows.map((row) => (

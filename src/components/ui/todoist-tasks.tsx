@@ -118,7 +118,7 @@ export function TodoistTasks({ call, threadId }: { call: ComponentCall; threadId
                 </button>
 
                 <div className="min-w-0">
-                  <p className={completed ? "text-[14px] leading-5 text-ink-secondary line-through" : "text-[14px] leading-5 text-ink"}>
+                  <p className={completed ? "text-[14px] leading-5 text-ink-secondary" : "text-[14px] leading-5 text-ink"}>
                     <span className="sr-only">{completed ? "Completed: " : "Not completed: "}</span>
                     {task.content}
                   </p>
