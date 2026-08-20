@@ -92,7 +92,12 @@ declare global {
       ): Promise<ConfigStatus>;
       /** Electron-only trusted Todoist write seam. */
       todoist?: {
-        complete(payload: { threadId: string; callId: string; taskId: string }): Promise<{ ok: true; taskId: string }>;
+        complete(payload: { threadId: string; callId: string; taskId: string }): Promise<{
+          ok: true;
+          taskId: string;
+          actionId: string;
+          pendingSync: boolean;
+        }>;
       };
       /** In-app auto-update (packaged app only; dormant in dev). onState
        * fires immediately with the current state, then on transitions. */

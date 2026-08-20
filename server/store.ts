@@ -13,6 +13,7 @@ import { parseJsonObject } from "./json.ts";
 import * as mdb from "./message-db.ts";
 import { workspaceDir } from "./workspace.ts";
 import { newId, type CloudBackend, type Json, type JsonObject, type ModelSelection, type ThreadId } from "./contracts.ts";
+import { deleteActionEventsForThread } from "./ui/action-db.ts";
 import type { ComponentCall } from "./ui/contract.ts";
 import { pickBotName } from "./names.ts";
 import { redactSecretsInText } from "./redact.ts";
@@ -632,6 +633,7 @@ export class Store {
   private deleteThreadRecord(threadId: string) {
     this.threads.delete(threadId);
     mdb.deleteThread(threadId);
+    deleteActionEventsForThread(threadId);
     for (const file of [messagesFile(threadId), `${messagesFile(threadId)}.imported`]) {
       try {
         unlinkSync(file);

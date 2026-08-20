@@ -1,4 +1,8 @@
-import { UI_LIMITS, type GallerySpec } from "./contract.ts";
+import { z } from "zod";
+
+import { UI_LIMITS, type GallerySpec, type Json, type JsonObject, type JsonSchema, type Result } from "./contract.ts";
+import { COMPILED_COMPONENT_SCHEMAS } from "./schemas.ts";
+import { validateArgs } from "./validate.ts";
 
 const tone = {
   type: "string" as const,
@@ -7,7 +11,7 @@ const tone = {
     "How this reads at a glance. Use negative and caution sparingly, for a refusal, a breach or a failure, not for anything merely notable.",
 };
 
-export const GALLERY: GallerySpec[] = [
+const LEGACY_GALLERY: Array<Omit<GallerySpec, "validate">> = [
   {
     name: "show_record_card",
     title: "Record",
@@ -158,13 +162,103 @@ export const GALLERY: GallerySpec[] = [
   },
 ];
 
-export const GALLERY_BY_NAME: ReadonlyMap<string, GallerySpec> = new Map(GALLERY.map((spec) => [spec.name, spec]));
+const JSON_OBJECT = z.record(z.string(), z.json());
 
+function compiledSpec(input: {
+  name: keyof typeof COMPILED_COMPONENT_SCHEMAS;
+  title: string;
+  kind: GallerySpec["kind"];
+  description: string;
+  confirmation: string;
+}): GallerySpec {
+  const schema = COMPILED_COMPONENT_SCHEMAS[input.name];
+  const jsonSchema = JSON_OBJECT.parse(z.toJSONSchema(schema));
+  // SAFETY: z.toJSONSchema emitted a JSON object from the same strict Zod schema used by validate below.
+  const parameters = jsonSchema as JsonSchema;
+  return {
+    ...input,
+    parameters,
+    validate(value: Json): Result<JsonObject, string> {
+      const parsed = schema.safeParse(value);
+      if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "component arguments are invalid" };
+      const object = JSON_OBJECT.safeParse(parsed.data);
+      return object.success
+        ? { ok: true, value: object.data }
+        : { ok: false, error: "component arguments must be a JSON object" };
+    },
+  };
+}
+
+const COMPILED_GALLERY: GallerySpec[] = [
+  compiledSpec({
+    name: "show_status_board",
+    title: "Status board",
+    kind: "list",
+    description: "Show decision-ready operational status grouped as resolved, new, awaiting, still open, and healthy. Preserve exact counts, owners, evidence, severity, and next moves; use the quiet state when nothing needs attention.",
+    confirmation: "The status board is now on screen.",
+  }),
+  compiledSpec({
+    name: "show_supplement_stack",
+    title: "Supplement stack",
+    kind: "action",
+    description: "Show the dated AM/PM regimen and situational items. The server overlays a per-day local checklist ledger; ticks never edit the regimen source or vault protocol.",
+    confirmation: "The dated supplement stack is now on screen.",
+  }),
+  compiledSpec({
+    name: "show_week_calendar",
+    title: "Week calendar",
+    kind: "list",
+    description: "Show exactly seven days of existing, proposed, and conflicting commitments, including field trips, walker assignments, relevant context, exclusions, and reply-ready approval choices. This component proposes only; it never writes Google Calendar.",
+    confirmation: "The seven-day calendar proposal is now on screen.",
+  }),
+  compiledSpec({
+    name: "show_supply_status",
+    title: "Supply status",
+    kind: "card",
+    description: "Show a recommendation, bottle counts, filled/incoming/threshold gauge, cost, aging deadline, provenance, and reply choices. This component never changes ReadyRefresh or any supplier account.",
+    confirmation: "The supply recommendation is now on screen.",
+  }),
+  compiledSpec({
+    name: "show_conversation",
+    title: "Conversation",
+    kind: "card",
+    description: "Show a bounded recent conversation, surface, age, stakes, owed reason, and a draft. Reply choices may ask to edit or request a claude-actions mint, but this component never sends and never carries messaging credentials.",
+    confirmation: "The bounded conversation and draft are now on screen.",
+  }),
+  compiledSpec({
+    name: "show_booking_slot",
+    title: "Booking slot",
+    kind: "card",
+    description: "Show one candidate haircut slot, last-cut age, surrounding calendar fit, and an explicitly unverified Square state. Reply choices approve the exact slot or ask for a different day; this component never opens or books Square.",
+    confirmation: "The candidate booking slot is now on screen.",
+  }),
+  compiledSpec({
+    name: "show_event_countdown",
+    title: "Event countdown",
+    kind: "list",
+    description: "Show live time to doors, completed and open blockers, owners, evidence, draft-ready links, and the next move. Use exact timestamps so the renderer owns the countdown.",
+    confirmation: "The live event countdown is now on screen.",
+  }),
+];
+
+export const GALLERY: GallerySpec[] = [
+  ...LEGACY_GALLERY.map((spec): GallerySpec => ({
+    ...spec,
+    validate: (value) => validateArgs(spec.parameters, value),
+  })),
+  ...COMPILED_GALLERY,
+];
+
+export const GALLERY_BY_NAME: ReadonlyMap<string, GallerySpec> = new Map(GALLERY.map((spec) => [spec.name, spec]));
 export const UI_TOOL_NAMES: ReadonlySet<string> = new Set(GALLERY.map((spec) => spec.name));
+
+export function privateUiTools(): Array<{ name: string; description: string; inputSchema: JsonSchema }> {
+  return GALLERY.map((spec) => ({ name: spec.name, description: spec.description, inputSchema: spec.parameters }));
+}
 
 export function generativeUiSystemPrompt(): string {
   const tools = GALLERY.map((spec) => `${spec.name} (${spec.title.toLowerCase()})`).join(", ");
-  return `You can put structured UI on screen with the ui tools. Available tools: ${tools}. Prefer a component over a markdown table or prose list when the person should inspect or act on structured information. The mounted tool schemas are the source of truth; never invent a UI tool name or arguments. Showing a component never performs its interactive action — the person must use the control in OpenMausBot.`;
+  return `You can put structured UI on screen with the private ui tools mounted for this OpenMaus turn. Available tools: ${tools}. Prefer a component over a markdown table or prose list when the person should inspect or act on structured information. Typed fields carry exact facts; you still own relevance, grouping, emphasis, explanation, composition, and the best next step. The mounted tool schemas are the source of truth; never invent a UI tool name or arguments. Showing a component never performs its interactive action — the person must use the trusted control in OpenMausBot.`;
 }
 
 export function uiToolNameFromTitle(title: string | undefined): string | null {

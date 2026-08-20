@@ -4,10 +4,11 @@ import { newEventId, newId, type Json, type JsonObject, type RuntimeEvent } from
 import type { Message } from "../store.ts";
 import type { ComponentCall, ComponentOrigin, Result, TodoistTaskView } from "./contract.ts";
 import { asJsonObject, ComponentCallSchema, isJsonObject, UI_LIMITS } from "./contract.ts";
+import { readSupplementLedger } from "./action-db.ts";
 import { appendUiAction } from "./evidence.ts";
 import { GALLERY_BY_NAME } from "./gallery.ts";
+import { SupplementStackSchema } from "./schemas.ts";
 import { loadTodoistTasks, type TodoistClient } from "./todoist.ts";
-import { validateArgs } from "./validate.ts";
 
 export type ShowStore = {
   appendMessage: (threadId: string, message: Omit<Message, "id" | "at"> & { at?: number }) => Message;
@@ -38,6 +39,7 @@ export type ShowContext = {
 };
 
 const TODOIST_NAME = "show_todoist_tasks";
+const SUPPLEMENT_NAME = "show_supplement_stack";
 const STRING = z.string();
 const TASK_IDS = z.array(z.string());
 
@@ -54,7 +56,7 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
   const spec = GALLERY_BY_NAME.get(input.name);
   if (!spec) return { ok: false, error: `Unknown component: ${input.name}` };
 
-  const checked = validateArgs(spec.parameters, input.arguments);
+  const checked = spec.validate(input.arguments);
   if (!checked.ok) return checked;
 
   let storedArgs = checked.value;
@@ -68,6 +70,10 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
       status = "error";
       result = resolved.errors.join(" ");
     }
+  } else if (spec.name === SUPPLEMENT_NAME) {
+    const resolved = resolveSupplementArgs(checked.value);
+    if (!resolved.ok) return resolved;
+    storedArgs = resolved.value;
   }
 
   const call: ComponentCall = {
@@ -86,6 +92,7 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
   ctx.store.appendMessage(input.threadId, {
     role: "bot",
     kind: "component",
+    text: call.result,
     component: call,
     from: input.from,
   });
@@ -117,6 +124,27 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
     origin: call.origin,
   });
   return { ok: true, value: call };
+}
+
+function resolveSupplementArgs(args: JsonObject): Result<JsonObject, string> {
+  const parsed = SupplementStackSchema.safeParse(args);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid supplement stack." };
+  const ledger = readSupplementLedger(parsed.data.date, parsed.data.regimen.version);
+  return {
+    ok: true,
+    value: asJsonObject({
+      ...parsed.data,
+      groups: parsed.data.groups.map((group) => ({
+        ...group,
+        items: group.items.map((item) => ({
+          ...item,
+          checked: group.period === "situational" || item.situational === true
+            ? false
+            : ledger.get(item.id) === true,
+        })),
+      })),
+    }),
+  };
 }
 
 function exactTodoistTaskIds(value: Json | undefined): Result<string[], string> {
@@ -157,6 +185,7 @@ async function resolveTodoistArgs(
         isCompleted: task.isCompleted,
         url: task.url,
         due: task.due,
+        recurring: task.recurring === true,
         projectId: task.projectId ?? null,
         projectName: task.projectName ?? null,
         labels: task.labels ?? [],
@@ -196,7 +225,7 @@ function listedTask(args: JsonObject, taskId: string): JsonObject | null {
   return null;
 }
 
-function completionCandidate(
+export function todoistCompletionCandidate(
   input: CompletionInput,
   ctx: ShowContext,
   allowCompleted = false,
@@ -218,7 +247,7 @@ function completionCandidate(
  * whether the transcript currently contains the row; it cannot close Todoist,
  * because the remote write exists solely behind Electron IPC. */
 export async function authorizeTodoistCompletion(input: CompletionInput, ctx: ShowContext): Promise<Result<{ taskId: string }, string>> {
-  const candidate = completionCandidate(input, ctx);
+  const candidate = todoistCompletionCandidate(input, ctx);
   if (!candidate.ok) return candidate;
   const remote = await ctx.todoist.getTask(candidate.value.taskId);
   if (!remote.ok) return remote;
@@ -233,7 +262,7 @@ export async function authorizeTodoistCompletion(input: CompletionInput, ctx: Sh
  * against Todoist and never emits the trusted Electron action receipt. */
 export async function reconcileTodoistCompletion(input: CompletionInput, ctx: ShowContext): Promise<Result<{ taskId: string }, string>> {
   const at = (ctx.now ?? (() => new Date().toISOString()))();
-  const candidate = completionCandidate(input, ctx, true);
+  const candidate = todoistCompletionCandidate(input, ctx, true);
   if (!candidate.ok) {
     appendUiAction(ctx.dataDir, {
       at,
@@ -272,6 +301,23 @@ export async function reconcileTodoistCompletion(input: CompletionInput, ctx: Sh
   }
   markCompleted(candidate.value.found, input, ctx);
   return { ok: true, value: { taskId: candidate.value.taskId } };
+}
+
+export function applyTrustedTodoistCompletion(
+  input: CompletionInput,
+  ctx: ShowContext,
+): Result<{ taskId: string; task: JsonObject; message: Message }, string> {
+  const candidate = todoistCompletionCandidate(input, ctx, true);
+  if (!candidate.ok) return candidate;
+  if (candidate.value.task.isCompleted !== true) markCompleted(candidate.value.found, input, ctx);
+  return {
+    ok: true,
+    value: {
+      taskId: candidate.value.taskId,
+      task: candidate.value.task,
+      message: candidate.value.found.message,
+    },
+  };
 }
 
 function markCompleted(found: { message: Message; call: ComponentCall }, input: CompletionInput, ctx: ShowContext): void {

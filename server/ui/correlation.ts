@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { Json, JsonObject, RuntimeEvent } from "../contracts.ts";
-import type { ComponentOrigin } from "./contract.ts";
+import { UI_LIMITS, type ComponentOrigin } from "./contract.ts";
 import { uiToolNameFromTitle } from "./gallery.ts";
 
 const MAX_PENDING_PER_THREAD = 32;
@@ -29,11 +29,12 @@ type UiCallWaiter = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-function canonical(value: Json): string {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+function canonical(value: Json, depth = 0): string {
+  if (depth > UI_LIMITS.depth) return "[depth-limit]";
+  if (Array.isArray(value)) return `[${value.map((item) => canonical(item, depth + 1)).join(",")}]`;
   const object = JSON_OBJECT.safeParse(value);
   if (object.success) {
-    return `{${Object.keys(object.data).sort().map((key) => `${JSON.stringify(key)}:${canonical(object.data[key]!)}`).join(",")}}`;
+    return `{${Object.keys(object.data).sort().map((key) => `${JSON.stringify(key)}:${canonical(object.data[key]!, depth + 1)}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }

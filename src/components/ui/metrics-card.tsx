@@ -14,8 +14,8 @@ export function MetricsCard({
   return (
     <UiFrame caption={caption} title={title}>
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-        {metrics.map((metric) => (
-          <div key={metric.label}>
+        {metrics.map((metric, index) => (
+          <div key={`${index}-${metric.label}`}>
             <p className="truncate text-[12px] text-ink-secondary">{metric.label}</p>
             <p className="mt-0.5 text-[20px] font-semibold tabular-nums text-ink">{metric.value}</p>
             {metric.change ? (

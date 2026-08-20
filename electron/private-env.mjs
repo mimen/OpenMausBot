@@ -10,5 +10,7 @@ export function capturePrivateEnv(name, env = process.env) {
 export function withoutPrivateEnv(source = process.env) {
   const env = { ...source };
   delete env.TODOIST_API_TOKEN;
+  delete env.OMB_DESKTOP_ACTION_TOKEN;
+  delete env.OMB_ELECTRON_USER_DATA;
   return env;
 }

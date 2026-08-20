@@ -1,4 +1,5 @@
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, ipcMain, safeStorage, screen, session, shell, systemPreferences, utilityProcess } from "electron";
+import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +28,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_URL = process.env.ELECTRON_START_URL ?? "http://127.0.0.1:5199";
 const DEFAULT_COMPOSIO_BROKER_URL = "https://openmausbot-composio.milindsoni201.workers.dev";
 const BOOT_TODOIST_TOKEN = capturePrivateEnv("TODOIST_API_TOKEN");
+const DESKTOP_ACTION_TOKEN = capturePrivateEnv("OMB_DESKTOP_ACTION_TOKEN") || randomBytes(24).toString("hex");
 const todoistCompletionGate = new TodoistCompletionGate();
+const ISOLATED_USER_DATA = capturePrivateEnv("OMB_ELECTRON_USER_DATA");
+if (ISOLATED_USER_DATA) app.setPath("userData", ISOLATED_USER_DATA);
 let SERVER_PORT = resolveServerPort(process.env.OMB_PORT);
 const APP_ICON = path.join(__dirname, "resources/app-icon.png");
 
@@ -241,7 +245,10 @@ async function startServerOn(port) {
   });
   proc.stdout?.on("data", (d) => slog(`[out] ${String(d).trimEnd()}`));
   proc.stderr?.on("data", (d) => slog(`[err] ${String(d).trimEnd()}`));
-  proc.once("spawn", () => slog(`spawned pid=${proc.pid}`));
+  proc.once("spawn", () => {
+    proc.postMessage({ type: "desktop-action-token", token: DESKTOP_ACTION_TOKEN });
+    slog(`spawned pid=${proc.pid}`);
+  });
   let exited = false;
   proc.once("exit", (code) => {
     exited = true;
@@ -669,7 +676,10 @@ ipcMain.handle("credential:set", async (_event, name, value) => {
 async function todoistServerAction(pathname, payload) {
   const response = await fetch(`http://127.0.0.1:${SERVER_PORT}${pathname}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${DESKTOP_ACTION_TOKEN}`,
+    },
     body: JSON.stringify(payload),
   });
   const body = await response.json().catch(() => null);
@@ -677,31 +687,53 @@ async function todoistServerAction(pathname, payload) {
   return body;
 }
 
+async function reportTodoistAction(pathname, payload) {
+  let lastError = null;
+  for (const delayMs of [0, 150, 500]) {
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      return await todoistServerAction(pathname, payload);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Todoist action report failed.");
+}
+
 ipcMain.handle("todoist:complete", async (_event, value) => {
   const payload = parseTodoistCompletionPayload(value);
   if (!payload) throw new Error("Invalid Todoist completion request.");
-  // The server performs a read-only transcript/remote-state authorization.
-  // Only Electron main owns the remote close and the token needed to make it.
-  await todoistServerAction("/api/ui/todoist/authorize", payload);
+  // The server durably claims the exact shown action before Electron receives
+  // permission to write. A missing claim always aborts the close.
+  const claim = await todoistServerAction("/api/internal/ui/desktop/todoist/begin", payload);
+  const actionPayload = { ...payload, actionId: claim.actionId };
   const token = secureCredentials.todoistToken || BOOT_TODOIST_TOKEN;
-  await todoistCompletionGate.run(completionKey(payload), () => closeTodoistTask(token, payload.taskId));
+  try {
+    await todoistCompletionGate.run(completionKey(payload), () => closeTodoistTask(token, payload.taskId));
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    await reportTodoistAction("/api/internal/ui/desktop/todoist/fail", { ...actionPayload, error: detail })
+      .catch((reportError) => console.error("[todoist] failure report did not settle", reportError));
+    throw error;
+  }
   try {
     appendTodoistCompletionReceipt(
       process.env.OMB_DATA_DIR || path.join(app.getPath("home"), ".openmausbot"),
-      payload,
+      actionPayload,
     );
   } catch (error) {
     // Audit persistence must not turn a successful remote close into a retry.
     console.error("[todoist] completion receipt failed", error);
   }
   try {
-    await todoistServerAction("/api/ui/todoist/reconcile-completion", payload);
+    await reportTodoistAction("/api/internal/ui/desktop/todoist/complete", actionPayload);
+    return { ok: true, taskId: payload.taskId, actionId: claim.actionId, pendingSync: false };
   } catch (error) {
-    // The remote close already succeeded and must never be retried. The card
-    // reconciles from Todoist on the next authorization/replay instead.
-    console.error("[todoist] local completion reconciliation failed", error);
+    // The durable started event remains the crash-recovery source of truth.
+    // Never execute the remote close again merely because reporting failed.
+    console.error("[todoist] completion report pending recovery", error);
+    return { ok: true, taskId: payload.taskId, actionId: claim.actionId, pendingSync: true };
   }
-  return { ok: true, taskId: payload.taskId };
 });
 
 async function broadcastDesktopCapabilities() {

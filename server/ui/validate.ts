@@ -1,21 +1,27 @@
 import { z } from "zod";
 
 import type { Json, JsonObject, JsonSchema, Result } from "./contract.ts";
-import { isJsonObject } from "./contract.ts";
+import { UI_LIMITS } from "./contract.ts";
 
 const STRING = z.string();
 const NUMBER = z.number().finite();
 const BOOLEAN = z.boolean();
-const ARRAY = z.array(z.json());
+
+function isShallowJsonObject(value: Json): value is JsonObject {
+  if (value === null || Array.isArray(value) || Object.prototype.toString.call(value) !== "[object Object]") return false;
+  // SAFETY: Json excludes functions and undefined; the checks above exclude every non-object union member.
+  return true;
+}
 
 export function validateArgs(schema: JsonSchema, value: Json): Result<JsonObject, string> {
-  const checked = check(schema, value, "arguments");
+  const checked = check(schema, value, "arguments", 0);
   if (!checked.ok) return checked;
-  if (!isJsonObject(checked.value)) return { ok: false, error: "arguments must be an object" };
+  if (!isShallowJsonObject(checked.value)) return { ok: false, error: "arguments must be an object" };
   return { ok: true, value: checked.value };
 }
 
-function check(schema: JsonSchema, value: Json, path: string): Result<Json, string> {
+function check(schema: JsonSchema, value: Json, path: string, depth: number): Result<Json, string> {
+  if (depth > UI_LIMITS.depth) return { ok: false, error: `${path} exceeds the maximum nesting depth of ${UI_LIMITS.depth}` };
   if (schema.type === "string") {
     const parsed = STRING.safeParse(value);
     if (!parsed.success) return { ok: false, error: `${path} must be a string` };
@@ -39,18 +45,17 @@ function check(schema: JsonSchema, value: Json, path: string): Result<Json, stri
     return parsed.success ? { ok: true, value: parsed.data } : { ok: false, error: `${path} must be a boolean` };
   }
   if (schema.type === "array") {
-    const parsed = ARRAY.safeParse(value);
-    if (!parsed.success) return { ok: false, error: `${path} must be an array` };
-    if (schema.minItems !== undefined && parsed.data.length < schema.minItems) {
+    if (!Array.isArray(value)) return { ok: false, error: `${path} must be an array` };
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
       return { ok: false, error: `${path} has at least ${schema.minItems} item${schema.minItems === 1 ? "" : "s"}` };
     }
-    if (schema.maxItems !== undefined && parsed.data.length > schema.maxItems) {
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
       return { ok: false, error: `${path} has at most ${schema.maxItems} items` };
     }
     const items: Json[] = [];
-    for (let i = 0; i < parsed.data.length; i++) {
+    for (let i = 0; i < value.length; i++) {
       const itemSchema = schema.items ?? {};
-      const next = check(itemSchema, parsed.data[i], `${path}[${i}]`);
+      const next = check(itemSchema, value[i], `${path}[${i}]`, depth + 1);
       if (!next.ok) return next;
       items.push(next.value);
     }
@@ -58,7 +63,7 @@ function check(schema: JsonSchema, value: Json, path: string): Result<Json, stri
   }
 
   if (schema.type === "object" || schema.properties || schema.required) {
-    if (!isJsonObject(value)) return { ok: false, error: `${path} must be an object` };
+    if (!isShallowJsonObject(value)) return { ok: false, error: `${path} must be an object` };
     const properties = schema.properties ?? {};
     for (const key of schema.required ?? []) {
       if (!(key in value)) return { ok: false, error: `${path}.${key} is required` };
@@ -75,7 +80,7 @@ function check(schema: JsonSchema, value: Json, path: string): Result<Json, stri
         out[key] = raw;
         continue;
       }
-      const next = check(property, raw, `${path}.${key}`);
+      const next = check(property, raw, `${path}.${key}`, depth + 1);
       if (!next.ok) return next;
       out[key] = next.value;
     }

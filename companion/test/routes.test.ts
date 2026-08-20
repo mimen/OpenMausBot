@@ -133,6 +133,8 @@ describe("what it may not", () => {
       "/api/whatever-ships-next",
       "/api/bots/bot_123/some-new-verb",
       "/api/secrets",
+      "/api/ui/supplements/toggle",
+      "/api/internal/ui/desktop/todoist/complete",
     ]) {
       expect(allowed("GET", path), path).toBe(false);
       expect(allowed("POST", path), path).toBe(false);

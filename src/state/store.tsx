@@ -14,9 +14,9 @@ import {
   type ReactNode,
 } from "react";
 import type { CloudBackend, EffortLevel, JsonObject } from "../../server/contracts.ts";
-import type { ComponentCall } from "../../server/ui/contract.ts";
+import type { ComponentActionEvent, ComponentCall } from "../../server/ui/contract.ts";
 
-export type { ComponentCall };
+export type { ComponentActionEvent, ComponentCall };
 import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { Routine, RoutineInput, RoutineRun } from "@/lib/routines";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
@@ -195,6 +195,8 @@ export interface Bot {
    * allowed for existing bots; imported bots start with this disabled. */
   composio?: boolean;
   messages: Message[];
+  /** Public durable component-action events for the active thread. */
+  actionEvents?: ComponentActionEvent[];
   /** leaf of the visible conversation branch (see visibleMessages) */
   activeLeafId?: string | null;
 }

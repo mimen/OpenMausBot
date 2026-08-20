@@ -27,8 +27,8 @@ export function ChecklistCard({
         {done} of {items.length} checklist items completed.
       </p>
       <ul className="space-y-2" aria-busy="false" aria-label={`${done} of ${items.length} checklist items completed`}>
-        {items.map((item) => (
-          <li className="flex items-start gap-2.5 text-[13px]" key={item.text}>
+        {items.map((item, index) => (
+          <li className="flex items-start gap-2.5 text-[13px]" key={`${index}-${item.text}`}>
             <span className="sr-only">{item.done ? "Completed: " : "Not completed: "}</span>
             <span
               aria-hidden="true"

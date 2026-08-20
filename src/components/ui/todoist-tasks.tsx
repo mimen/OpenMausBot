@@ -12,6 +12,7 @@ const Task = z.object({
   isCompleted: z.boolean(),
   url: z.string().max(UI_LIMITS.value).nullable(),
   due: z.string().max(UI_LIMITS.label).nullable(),
+  recurring: z.boolean().optional(),
   projectId: z.string().max(UI_LIMITS.providerIdentity).nullable().optional(),
   projectName: z.string().max(UI_LIMITS.label).nullable().optional(),
   labels: z.array(z.string().max(UI_LIMITS.label)).max(20).optional(),
@@ -77,7 +78,7 @@ export function TodoistTasks({ call, threadId }: { call: ComponentCall; threadId
       caption={desktopCompletion ? "Click the circle to complete in Todoist." : "Read-only preview. Complete tasks in the desktop app."}
       title={title}
     >
-      <div aria-live="polite" aria-atomic="false">
+      <div>
         {tasks.length === 0 ? <p className="text-[13px] text-ink-secondary" role="status">No tasks to show.</p> : null}
         <ul aria-busy={tasks.some((task) => row[task.id]?.state === "loading")}>
           {tasks.map((task) => {
@@ -95,9 +96,11 @@ export function TodoistTasks({ call, threadId }: { call: ComponentCall; threadId
                   type="button"
                   aria-busy={loading}
                   aria-label={todoistActionLabel(state, task.content)}
-                  disabled={disabled}
-                  onClick={() => void complete(task.id)}
-                  className={`group/check mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#dc4c3e]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed ${
+                  aria-disabled={disabled}
+                  onClick={() => {
+                    if (!disabled) void complete(task.id);
+                  }}
+                  className={`group/check relative mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors after:absolute after:-inset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
                     completed
                       ? "border-[#dc4c3e] bg-[#dc4c3e] text-white"
                       : loading
@@ -105,7 +108,7 @@ export function TodoistTasks({ call, threadId }: { call: ComponentCall; threadId
                         : task.unavailable
                           ? "border-ink-secondary/35 text-transparent"
                           : "border-[#dc4c3e] text-white hover:bg-[#dc4c3e] disabled:opacity-45"
-                  }`}
+                  } ${disabled ? "cursor-not-allowed opacity-45" : ""}`}
                 >
                   {loading ? (
                     <Loader2 size={12} className="animate-spin" aria-hidden="true" />
@@ -138,11 +141,11 @@ export function TodoistTasks({ call, threadId }: { call: ComponentCall; threadId
                     {task.projectName ? (
                       <span className="ml-auto inline-flex items-center gap-1 whitespace-nowrap">
                         {task.projectName}
-                        <Hash size={13} strokeWidth={2} className="text-[#7f5af0]" aria-hidden="true" />
+                        <Hash size={13} strokeWidth={2} className="text-ink-secondary" aria-hidden="true" />
                       </span>
                     ) : null}
-                    {loading ? <span role="status">Completing…</span> : null}
-                    {completed ? <span role="status">Completed</span> : null}
+                    {loading ? <span>Completing…</span> : null}
+                    {completed ? <span>Completed</span> : null}
                   </div>
 
                   {error ? <p className="mt-1 text-[12px] text-danger" role="alert">{error}</p> : null}

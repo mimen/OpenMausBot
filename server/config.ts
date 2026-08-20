@@ -201,6 +201,7 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "TODOIST_API_TOKEN",
   "COMPOSIO_API_KEY",
   "OMB_COMPOSIO_BROKER_TOKEN",
+  "OMB_DESKTOP_ACTION_TOKEN",
 ] as const;
 
 /** Drop every workspace credential from a child-process env (in place). */

@@ -14,7 +14,18 @@ const TodoistTaskResponse = z.object({
   is_completed: z.boolean().optional(),
   checked: z.boolean().optional(),
   url: z.string().max(UI_LIMITS.value).nullable().optional(),
-  due: z.object({ date: z.string().max(UI_LIMITS.label).nullable().optional() }).nullable().optional(),
+  due: z.object({
+    date: z.string().max(UI_LIMITS.label).nullable().optional(),
+    is_recurring: z.boolean().optional(),
+  }).nullable().optional(),
+});
+
+const TodoistCompletedResponse = z.object({
+  items: z.array(z.object({
+    id: z.union([z.string(), z.number()]),
+    completed_at: z.string().optional(),
+  }).passthrough()).max(200),
+  next_cursor: z.string().nullable().optional(),
 });
 
 const TodoistProjectResponse = z.object({
@@ -25,6 +36,7 @@ const TodoistProjectResponse = z.object({
 export type TodoistClient = {
   getTask: (taskId: string) => Promise<Result<TodoistTaskView, string>>;
   closeTask: (taskId: string) => Promise<Result<true, string>>;
+  wasCompleted?: (taskId: string, since: string) => Promise<Result<boolean, string>>;
 };
 
 export type TodoistTokenSource = () => string | null;
@@ -121,6 +133,36 @@ export function liveTodoistClient(tokenSource: TodoistTokenSource, fetchImpl: Fe
         return { ok: false, error: `Todoist could not load task ${taskId}.` };
       }
     },
+    async wasCompleted(taskId, since) {
+      const token = tokenSource();
+      if (!token) return { ok: false, error: "Todoist is not configured on this machine." };
+      const sinceDate = new Date(since);
+      if (Number.isNaN(sinceDate.getTime())) return { ok: false, error: "The Todoist action timestamp is invalid." };
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page += 1) {
+        const url = new URL(`${TODOIST_API}/tasks/completed/by_completion_date`);
+        url.searchParams.set("since", sinceDate.toISOString());
+        url.searchParams.set("until", new Date(Date.now() + 5 * 60_000).toISOString());
+        if (cursor) url.searchParams.set("cursor", cursor);
+        try {
+          const response = await fetchImpl(url.toString(), {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (!response.ok) return { ok: false, error: `Todoist could not read completed tasks (${response.status}).` };
+          const body = await boundedResponseText(response);
+          if (!body.ok) return body;
+          const parsed = TodoistCompletedResponse.safeParse(JSON.parse(body.value));
+          if (!parsed.success) return { ok: false, error: "Todoist returned completed tasks that could not be read." };
+          if (parsed.data.items.some((item) => String(item.id) === taskId)) return { ok: true, value: true };
+          cursor = parsed.data.next_cursor ?? null;
+          if (!cursor) return { ok: true, value: false };
+        } catch {
+          return { ok: false, error: "Todoist could not read completed tasks." };
+        }
+      }
+      return { ok: false, error: "Todoist completed-task history exceeded the recovery page limit." };
+    },
     async closeTask(taskId) {
       const token = tokenSource();
       if (!token) return { ok: false, error: "Todoist is not configured on this machine." };
@@ -177,6 +219,7 @@ export function parseTask(body: string, fallbackId: string): Result<TodoistTaskV
       isCompleted: parsed.data.is_completed === true || parsed.data.checked === true,
       url: parsed.data.url ?? null,
       due: parsed.data.due?.date ?? null,
+      recurring: parsed.data.due?.is_recurring === true,
       projectId: parsed.data.project_id == null ? null : String(parsed.data.project_id),
       projectName: null,
       labels: parsed.data.labels ?? [],

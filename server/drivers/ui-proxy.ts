@@ -5,10 +5,10 @@ import readline from "node:readline";
 import { z } from "zod";
 
 import type { JsonObject } from "../contracts.ts";
-import { GALLERY } from "../ui/gallery.ts";
+import { privateUiTools } from "../ui/gallery.ts";
 
 const HARNESS = process.env.OMB_HARNESS_URL ?? "http://127.0.0.1:8799";
-const TOKEN = process.env.OMB_COMMS_TOKEN ?? "";
+const TOKEN = process.env.OMB_UI_TOKEN ?? "";
 const BOT_ID = process.env.OMB_BOT_ID ?? "";
 const THREAD_ID = process.env.OMB_THREAD_ID ?? "";
 const PROVIDER = process.env.OMB_PROVIDER ?? "ui";
@@ -23,11 +23,7 @@ const RpcMessage = z.object({
 const ApiResponse = z.record(z.string(), z.json());
 const STRING = z.string();
 
-const TOOLS = GALLERY.map((spec) => ({
-  name: spec.name,
-  description: spec.description,
-  inputSchema: spec.parameters,
-}));
+const TOOLS = privateUiTools();
 
 type RpcIdValue = z.infer<typeof RpcId>;
 type RpcMessageValue = z.infer<typeof RpcMessage>;

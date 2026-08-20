@@ -37,6 +37,7 @@ function open(): DatabaseSync {
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
+  db.exec("PRAGMA busy_timeout = 5000");
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
       thread_id TEXT NOT NULL,
@@ -212,6 +213,10 @@ function importLegacy(threadId: string, legacyFile: string): ThreadRows {
     } catch {}
   } catch {}
   return { messages, activeLeafId };
+}
+
+export function messageDatabase(): DatabaseSync {
+  return db();
 }
 
 export function insertMessage(threadId: string, message: Message): void {

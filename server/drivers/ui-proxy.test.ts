@@ -77,7 +77,7 @@ beforeAll(async () => {
       OMB_HARNESS_URL: `http://127.0.0.1:${stubPort}`,
       OMB_BOT_ID: "bot-ui",
       OMB_THREAD_ID: "thread-ui",
-      OMB_COMMS_TOKEN: TOKEN,
+      OMB_UI_TOKEN: TOKEN,
       OMB_PROVIDER: "codex",
       OMB_PROVIDER_INSTANCE_ID: "codex-default",
     },

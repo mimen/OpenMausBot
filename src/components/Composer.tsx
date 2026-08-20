@@ -15,6 +15,7 @@ import {
   type Attachment,
 } from "@/lib/composer-attachments";
 import { normalizeState } from "@/lib/mascot";
+import { mergeReplyChipPrefill, REPLY_CHIP_PREFILL_EVENT, type ReplyChipPrefill } from "@/lib/ui/reply-chips";
 import { groupComposerHint, roomRespondersForComposer } from "@/lib/group-routing";
 import { PendingApprovalActions, PendingApprovalPanel, pendingApprovals } from "./PendingApproval";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
@@ -82,6 +83,15 @@ export function Composer({
   const [highlight, setHighlight] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null); // Esc'd this @
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const prefill = (event: CustomEvent<ReplyChipPrefill>) => {
+      if (event.detail.threadId !== threadId) return;
+      setText(mergeReplyChipPrefill(text, event.detail.message));
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    window.addEventListener(REPLY_CHIP_PREFILL_EVENT, prefill);
+    return () => window.removeEventListener(REPLY_CHIP_PREFILL_EVENT, prefill);
+  }, [setText, text, threadId]);
   // what was typed before the mic went on — partials append after it
   const baseText = useRef("");
 

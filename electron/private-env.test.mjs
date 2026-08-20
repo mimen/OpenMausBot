@@ -20,7 +20,11 @@ describe("Todoist child environment isolation", () => {
     }
   });
 
-  it("defensively strips a reintroduced token from arbitrary child envs", () => {
-    expect(withoutPrivateEnv({ PATH: "/bin", TODOIST_API_TOKEN: "leak" })).toEqual({ PATH: "/bin" });
+  it("defensively strips reintroduced action credentials from arbitrary child envs", () => {
+    expect(withoutPrivateEnv({
+      PATH: "/bin",
+      TODOIST_API_TOKEN: "leak",
+      OMB_DESKTOP_ACTION_TOKEN: "desktop-leak",
+    })).toEqual({ PATH: "/bin" });
   });
 });

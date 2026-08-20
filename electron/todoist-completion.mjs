@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 const TODOIST_API = "https://api.todoist.com/api/v1";
+const ACTION_ID = z.string().min(1).max(200);
 const CompletionPayload = z.object({
   threadId: z.string().min(1).max(200).refine((value) => value.trim() === value),
   callId: z.string().min(1).max(200).refine((value) => value.trim() === value),
@@ -42,6 +43,7 @@ export function completionKey({ threadId, callId, taskId }) {
 }
 
 export function appendTodoistCompletionReceipt(dataDir, payload, at = new Date().toISOString()) {
+  const actionId = ACTION_ID.safeParse(payload.actionId);
   mkdirSync(dataDir, { recursive: true });
   appendFileSync(
     join(dataDir, "ui-actions.ndjson"),
@@ -50,6 +52,7 @@ export function appendTodoistCompletionReceipt(dataDir, payload, at = new Date()
       kind: "complete-accepted",
       threadId: payload.threadId,
       callId: payload.callId,
+      actionId: actionId.success ? actionId.data : undefined,
       name: "show_todoist_tasks",
       taskId: payload.taskId,
       ok: true,

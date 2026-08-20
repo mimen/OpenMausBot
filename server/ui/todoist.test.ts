@@ -67,6 +67,26 @@ describe("Todoist HTTP client contract", () => {
     ]);
   });
 
+  it("preserves recurring due state and reads completed-task history for crash recovery", async () => {
+    expect(parseTask(JSON.stringify({
+      id: "task-1",
+      content: "Recurring task",
+      checked: false,
+      due: { date: "2026-08-20", is_recurring: true },
+    }), "task-1")).toMatchObject({ ok: true, value: { recurring: true, due: "2026-08-20" } });
+
+    const fetchImpl = vi.fn<FetchLike>(async (url) => {
+      if (url.includes("cursor=next")) {
+        return response(200, JSON.stringify({ items: [{ id: "task-1", completed_at: "2026-08-20T12:01:00Z" }], next_cursor: null }));
+      }
+      return response(200, JSON.stringify({ items: [], next_cursor: "next" }));
+    });
+    const client = liveTodoistClient(() => "secret", fetchImpl);
+    await expect(client.wasCompleted?.("task-1", "2026-08-20T12:00:00Z")).resolves.toEqual({ ok: true, value: true });
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain("/tasks/completed/by_completion_date?since=");
+    expect(fetchImpl.mock.calls[1]?.[0]).toContain("cursor=next");
+  });
+
   it("validates tokens through the authenticated user endpoint", async () => {
     const accepted = vi.fn<FetchLike>(async () => response(200, "{}"));
     await expect(validateTodoistToken("accepted", accepted)).resolves.toEqual({ ok: true, value: true });
