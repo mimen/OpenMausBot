@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { WebhookManager, type WebhookManagerOptions } from "./webhooks.ts";
+import { OpsBridgePayloadSchema } from "./ui/bridge.ts";
 
 const dirs: string[] = [];
 
@@ -122,6 +123,37 @@ describe("WebhookManager", () => {
     expect(h.queued[0]?.prompt).toContain("[UNTRUSTED WEBHOOK EVENT DATA]");
     expect(h.queued[0]?.prompt).toContain('"lead": "Ada"');
     expect(h.manager.list()[0]).toMatchObject({ lastRunId: "run-1", deliveryCount: 1 });
+  });
+
+  it("delivers validated structured bridge JSON compactly without truncating authoritative facts", () => {
+    const h = harness();
+    const { webhook, secret } = create(h.manager);
+    const findings = Array.from({ length: 100 }, (_, index) => ({
+      id: `finding-${index}`,
+      group: "still_open" as const,
+      label: index === 99 ? "tail-marker" : `Finding ${index}`,
+      severity: "warning" as const,
+      evidence: "e".repeat(240),
+      nextMove: "n".repeat(80),
+    }));
+    const payload = OpsBridgePayloadSchema.parse({
+      version: 1,
+      kind: "ops_status",
+      source: "ops-watch",
+      deliveryId: "ops-large",
+      checkedAt: "2026-08-20T12:00:00Z",
+      changedKeys: ["finding-99"],
+      summary: "s".repeat(1_500),
+      standingOpenCount: 100,
+      findings,
+    });
+    expect(JSON.stringify(payload).length).toBeLessThanOrEqual(45_056);
+    expect(JSON.stringify(payload, null, 2).length).toBeGreaterThan(48_000);
+
+    h.manager.receive(webhook.endpointId, secret, { payload, deliveryId: "ops-large" });
+    const prompt = String(h.queued[0]?.prompt ?? "");
+    expect(prompt).toContain('"label":"tail-marker"');
+    expect(prompt).not.toContain("Payload truncated by OpenMausBot");
   });
 
   it("uses an authenticated task from the payload when default instructions are empty", () => {

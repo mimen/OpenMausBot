@@ -7,6 +7,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 import type { RoutineRunOn } from "./routines.ts";
 import { parseJson, schemaIssue, type JsonValue } from "./schema.ts";
+import { StructuredBridgePayloadSchema } from "./ui/bridge.ts";
 
 export interface WebhookTrigger {
   id: string;
@@ -280,8 +281,9 @@ function serializePayload(payload: JsonValue): string {
   const plainText = z.string().safeParse(payload);
   if (plainText.success) text = plainText.data;
   else {
+    const structured = StructuredBridgePayloadSchema.safeParse(payload);
     try {
-      text = JSON.stringify(payload, null, 2) ?? String(payload);
+      text = structured.success ? JSON.stringify(structured.data) : (JSON.stringify(payload, null, 2) ?? String(payload));
     } catch {
       text = String(payload);
     }
