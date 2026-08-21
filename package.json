@@ -31,7 +31,7 @@
     "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "typecheck": "tsc -b && tsc -p tsconfig.server.json",
     "test": "node scripts/test-floor.mjs && pnpm broker:test && pnpm test:updater && pnpm test:packaged-server",
-    "test:updater": "node --test electron/updater-coordinator.node-test.mjs",
+    "test:updater": "node --test electron/updater-coordinator.node-test.mjs electron/updater-policy.node-test.mjs",
     "bench:observation": "node --experimental-strip-types scripts/bench-observation.ts",
     "evidence:generative-ui": "node --experimental-strip-types scripts/render-generative-ui-evidence.ts",
     "evidence:component-gallery": "bun run build && node scripts/capture-component-gallery.mjs",

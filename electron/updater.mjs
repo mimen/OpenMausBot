@@ -10,13 +10,14 @@
 import { app, ipcMain } from "electron";
 import { createRequire } from "node:module";
 import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
+import { initialUpdateState, UPDATE_POLICY } from "./updater-policy.mjs";
 
 const require = createRequire(import.meta.url);
 
 let autoUpdater = null;
 let win = null;
-// status: idle | checking | available | downloading | downloaded | installing | error
-let state = { status: "idle" };
+// status: disabled | idle | checking | available | downloading | downloaded | installing | error
+let state = initialUpdateState();
 let updaterCoordinator = null;
 
 function setState(patch) {
@@ -48,6 +49,14 @@ export function registerUpdaterIpc() {
 
 export function startUpdater(mainWindow) {
   win = mainWindow;
+  // Custom builds cannot safely consume the upstream release channel. Keep
+  // update controls visibly disabled until this fork publishes its own feed.
+  if (!UPDATE_POLICY.enabled) {
+    autoUpdater = null;
+    updaterCoordinator = null;
+    setState(initialUpdateState());
+    return;
+  }
   // dev / unsigned builds can't auto-update — leave the banner dormant
   if (!app.isPackaged) {
     updaterCoordinator = null;

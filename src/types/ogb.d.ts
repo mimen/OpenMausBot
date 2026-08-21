@@ -127,6 +127,7 @@ export interface LinuxLocalControlStatus {
 
 export interface UpdaterState {
   status:
+    | "disabled"
     | "idle"
     | "checking"
     | "available"
