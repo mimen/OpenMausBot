@@ -35,6 +35,83 @@ const frame = {
 } as const;
 
 export const COMPONENT_GALLERY_MESSAGES: Message[] = [
+  message("show_record_card", {
+    title: "Artist profile",
+    subtitle: "Afternoon Umbrella Friends",
+    status: "Confirmed",
+    statusTone: "positive",
+    fields: [
+      { label: "Artist", value: "DJ Minx" },
+      { label: "Set", value: "10:30 PM – midnight" },
+      { label: "Stage", value: "Main room" },
+      { label: "Hospitality", value: "2 guests · sparkling water" },
+    ],
+  }, 0),
+  message("show_metrics_card", {
+    title: "Campaign figures",
+    caption: "Compared with the previous seven days",
+    metrics: [
+      { label: "Tickets", value: "184", change: "+12%", changeTone: "positive" },
+      { label: "Revenue", value: "$6,420", change: "+$740", changeTone: "positive" },
+      { label: "Ad spend", value: "$812", change: "$4.41 / sale", changeTone: "neutral" },
+      { label: "Capacity", value: "61%", change: "116 left", changeTone: "caution" },
+    ],
+  }, 1),
+  message("show_checklist", {
+    title: "Doors checklist",
+    caption: "Final pass before the venue opens",
+    items: [
+      { text: "Guest list sent to the door team", done: true },
+      { text: "Artist credentials printed", done: true },
+      { text: "Confirm green-room water", done: false, note: "Waiting on venue manager" },
+      { text: "Test ticket scanner", done: false },
+    ],
+  }, 2),
+  message("show_quote", {
+    quote: "The final count is 42, including the two artist guests and excluding staff credentials.",
+    attribution: "Leah · event logistics",
+    context: "Exact wording from the confirmed door brief",
+  }, 3),
+  message("show_todoist_tasks", {
+    title: "Today’s tasks",
+    tasks: [
+      {
+        id: "gallery-task-1",
+        content: "Approve the final guest-list count",
+        description: "The door brief is ready once this number is locked.",
+        isCompleted: false,
+        url: null,
+        due: "2026-08-22",
+        projectId: "gallery-project",
+        projectName: "Glizzy Galaxy",
+        labels: ["event"],
+        commentCount: 2,
+      },
+      {
+        id: "gallery-task-2",
+        content: "Send the artist credential sheet",
+        isCompleted: true,
+        url: null,
+        due: null,
+        projectId: "gallery-project",
+        projectName: "Glizzy Galaxy",
+        labels: ["production"],
+        commentCount: 0,
+      },
+      {
+        id: "gallery-task-3",
+        content: "Confirm green-room water",
+        isCompleted: false,
+        url: null,
+        due: "2026-08-23",
+        recurring: false,
+        projectId: "gallery-project",
+        projectName: "Glizzy Galaxy",
+        labels: [],
+        commentCount: 0,
+      },
+    ],
+  }, 4),
   message("show_status_board", {
     title: "Portfolio status",
     frame,
@@ -46,7 +123,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
       { kind: "still_open", rows: [{ id: "asset", label: "Event recap asset handoff", severity: "info", since: "yesterday", owner: "Design", nextMove: "Confirm the final download folder." }] },
       { kind: "healthy", rows: [{ id: "sync", label: "Vault sync", severity: "healthy", owner: "Obsidian Sync", evidence: "Laptop and Mini are current." }] },
     ],
-  }, 0),
+  }, 5),
   message("show_supplement_stack", {
     title: "Today’s supplement stack",
     date: "2026-08-20",
@@ -57,7 +134,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
       { period: "pm", items: [{ id: "magnesium", label: "Magnesium glycinate", dose: "240 mg", checked: false }] },
       { period: "situational", items: [{ id: "electrolytes", label: "Electrolytes", note: "Long workout or high heat", situational: true, checked: false }] },
     ],
-  }, 1),
+  }, 6),
   message("show_week_calendar", {
     title: "Kira’s week",
     frame: { ...frame, source: "Calendar proposal", openCount: 2, delta: 0 },
@@ -75,7 +152,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
     relevantContext: ["Thursday’s field trip changes the normal pickup window.", "Friday evening stays open after 19:00."],
     proposalExclusions: ["No new event before school drop-off.", "Do not schedule over the Wednesday dinner conflict."],
     replies: [{ id: "approve-week", label: "Approve this week", message: "Approve the proposed Kira week exactly as shown, including the walker assignments and exclusions.", tone: "primary" }, { id: "change-day", label: "Change a day", message: "Keep the proposal, but help me change one day before I approve it." }],
-  }, 2),
+  }, 7),
   message("show_supply_status", {
     title: "Water supply",
     frame: { ...frame, source: "ReadyRefresh receipt + bottle count", openCount: 1, delta: 0 },
@@ -86,7 +163,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
     agingDeadline: { at: "2026-08-21T18:00:00-07:00", label: "Change the order before the delivery locks." },
     provenance: [{ label: "Bottle count", value: "Local reply" }, { label: "Delivery", value: "ReadyRefresh read-only receipt" }],
     replies: [{ id: "count", label: "I have 2 bottles", message: "I have 2 full bottles on hand. Recalculate the recommendation with that exact count." }, { id: "keep", label: "Keep delivery", message: "Keep the recommended delivery. Explain the next step without changing ReadyRefresh.", tone: "primary" }, { id: "skip", label: "Consider skipping", message: "Show me the case for skipping this delivery before I decide." }],
-  }, 3),
+  }, 8),
   message("show_conversation", {
     title: "Leah · event logistics",
     frame: { ...frame, source: "Inbox Closer", openCount: 1, delta: 0, owner: "Milad" },
@@ -101,7 +178,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
     owedReason: "Milad promised the exact count today; Leah is waiting before she closes the list.",
     draft: { body: "Final count is 42. That includes the two artist guests and excludes staff credentials.", status: "needs_edit" },
     replies: [{ id: "edit", label: "Edit the draft", message: "Help me edit this draft while preserving the exact count and exclusions." }, { id: "mint", label: "Request send approval", message: "The draft is ready. Prepare the editable claude-actions approval surface for this iMessage, but do not send directly.", tone: "primary" }],
-  }, 4),
+  }, 9),
   message("show_booking_slot", {
     title: "Haircut candidate",
     frame: { ...frame, source: "Calendar fit", openCount: 1, delta: 0 },
@@ -110,7 +187,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
     surroundingFit: [{ id: "b1", label: "Work block ends", timing: "13:45", relation: "before" }, { id: "b2", label: "Travel buffer", timing: "45 min", relation: "buffer" }, { id: "b3", label: "Dinner", timing: "18:30", relation: "after" }],
     square: { status: "unverified", label: "The calendar fit is real; Square availability has not been opened or checked." },
     replies: [{ id: "slot", label: "Approve exact slot", message: "Approve Wednesday August 26 from 2:30–3:15 PM as the exact candidate. Do not open or book Square yet.", tone: "primary" }, { id: "different", label: "Try another day", message: "Find a different day with the same calendar-fit constraints. Keep Square unverified." }],
-  }, 5),
+  }, 10),
   message("show_event_countdown", {
     title: "Glizzy Galaxy",
     frame: { ...frame, source: "Event Watch", openCount: 2, delta: -1, owner: "Event team" },
@@ -123,7 +200,7 @@ export const COMPONENT_GALLERY_MESSAGES: Message[] = [
     ],
     draftReadyLinks: [{ id: "link1", label: "Door brief draft", url: "https://example.com/door-brief" }, { id: "link2", label: "Asset folder", url: "https://example.com/assets" }],
     nextMove: "Approve the guest-list count, then hand the final door brief to venue staff.",
-  }, 6),
+  }, 11),
 ];
 
 export function ComponentGallery() {
@@ -131,7 +208,7 @@ export function ComponentGallery() {
     <main className="min-h-full bg-app px-4 py-8 text-ink sm:px-8" data-component-gallery>
       <header className="mx-auto mb-8 max-w-[900px]">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-text">OpenMaus compiled component grammar</p>
-        <h1 className="mt-2 text-balance text-[30px] font-semibold tracking-[-0.035em]">One conversational system, seven purpose-built views.</h1>
+        <h1 className="mt-2 text-balance text-[30px] font-semibold tracking-[-0.035em]">One conversational system, a purpose-built view for each job.</h1>
         <p className="mt-2 max-w-[70ch] text-[14px] leading-6 text-ink-secondary">Fixture-only evidence. No provider call, external write, credential, ReadyRefresh action, message send, Square booking, or calendar mutation runs on this route.</p>
       </header>
       <div className="mx-auto grid max-w-[900px] gap-6">

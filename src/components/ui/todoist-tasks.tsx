@@ -45,13 +45,13 @@ export function boundedTodoistTasks(call: ComponentCall): TaskView[] {
   return parsed.success ? parsed.data.tasks : [];
 }
 
-export function TodoistTasks({ call, threadId }: { call: ComponentCall; threadId: string }) {
+export function TodoistTasks({ call, threadId, readOnly = false }: { call: ComponentCall; threadId: string; readOnly?: boolean }) {
   const parsed = TodoistArguments.safeParse(call.arguments);
   const tasks = boundedTodoistTasks(call);
   const title = parsed.success ? (parsed.data.title ?? "Todoist tasks") : "Todoist tasks";
   const [row, setRow] = useState<Record<string, { state: RowState; error?: string }>>({});
   const done = tasks.filter((task) => task.isCompleted || row[task.id]?.state === "completed").length;
-  const desktopCompletion = window.ogb?.todoist?.complete;
+  const desktopCompletion = readOnly ? undefined : window.ogb?.todoist?.complete;
 
   const complete = async (taskId: string) => {
     const current = row[taskId]?.state;

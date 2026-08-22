@@ -315,6 +315,7 @@ export type AppSettingsSection =
   | "companion"
   | "voice"
   | "computer"
+  | "components"
   | "usage";
 
 export interface AppState {

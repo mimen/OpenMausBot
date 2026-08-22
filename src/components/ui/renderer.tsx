@@ -108,7 +108,7 @@ export function boundedChecklistItems(value: Json | undefined): ChecklistItem[] 
   return items;
 }
 
-type RendererProps = { call: ComponentCall; threadId: string };
+type RendererProps = { call: ComponentCall; threadId: string; readOnly: boolean };
 type Renderer = ComponentType<RendererProps>;
 
 function InvalidArguments({ name }: { name: string }) {
@@ -150,7 +150,9 @@ const RENDERER_REGISTRY = {
       context={stringOf(call.arguments.context, UI_LIMITS.subtitle)}
     />
   ),
-  show_todoist_tasks: ({ call, threadId }: RendererProps) => <TodoistTasks call={call} threadId={threadId} />,
+  show_todoist_tasks: ({ call, threadId, readOnly }: RendererProps) => (
+    <TodoistTasks call={call} readOnly={readOnly} threadId={threadId} />
+  ),
   show_status_board: ({ call }: RendererProps) => {
     const parsed = StatusBoardSchema.safeParse(call.arguments);
     return parsed.success ? <StatusBoard data={parsed.data} /> : <InvalidArguments name="Status board" />;
@@ -184,9 +186,9 @@ const RENDERER_REGISTRY = {
 export const RENDERER_NAMES: ReadonlySet<string> = new Set(Object.keys(RENDERER_REGISTRY));
 const RENDERER_BY_NAME: ReadonlyMap<string, Renderer> = new Map(Object.entries(RENDERER_REGISTRY));
 
-function GalleryBody({ call, threadId }: RendererProps) {
+function GalleryBody({ call, threadId, readOnly }: RendererProps) {
   const RendererComponent = RENDERER_BY_NAME.get(call.name);
-  if (RendererComponent) return <RendererComponent call={call} threadId={threadId} />;
+  if (RendererComponent) return <RendererComponent call={call} readOnly={readOnly} threadId={threadId} />;
   const fallback = componentFallback(call.name, "This build does not know how to draw that component.");
   return (
     <UiFrame title={fallback.title}>
@@ -195,7 +197,7 @@ function GalleryBody({ call, threadId }: RendererProps) {
   );
 }
 
-function SafeComponentBody({ raw, threadId }: { raw: ComponentCall; threadId: string }) {
+function SafeComponentBody({ raw, threadId, readOnly }: { raw: ComponentCall; threadId: string; readOnly: boolean }) {
   const parsed = ComponentCallSchema.safeParse(raw);
   if (!parsed.success) {
     return (
@@ -212,15 +214,23 @@ function SafeComponentBody({ raw, threadId }: { raw: ComponentCall; threadId: st
       </UiFrame>
     );
   }
-  return <GalleryBody call={call} threadId={threadId} />;
+  return <GalleryBody call={call} readOnly={readOnly} threadId={threadId} />;
 }
 
-export function ComponentRenderer({ message, threadId }: { message: Message; threadId: string }) {
+export function ComponentRenderer({
+  message,
+  threadId,
+  readOnly = false,
+}: {
+  message: Message;
+  threadId: string;
+  readOnly?: boolean;
+}) {
   const call = message.component;
   if (!call) return null;
   return (
     <ComponentBoundary name={call.name || "component"}>
-      <SafeComponentBody raw={call} threadId={threadId} />
+      <SafeComponentBody raw={call} readOnly={readOnly} threadId={threadId} />
     </ComponentBoundary>
   );
 }

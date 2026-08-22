@@ -17,26 +17,18 @@ import {
   SUPPLEMENT_TOGGLE_ERROR,
 } from "./supplement-stack";
 
-const compiledNames = [
-  "show_status_board",
-  "show_supplement_stack",
-  "show_week_calendar",
-  "show_supply_status",
-  "show_conversation",
-  "show_booking_slot",
-  "show_event_countdown",
-];
-
 function renderMessage(message: (typeof COMPONENT_GALLERY_MESSAGES)[number]): string {
-  return renderToStaticMarkup(createElement(ComponentRenderer, { message, threadId: "gallery-thread" }));
+  return renderToStaticMarkup(createElement(ComponentRenderer, { message, readOnly: true, threadId: "gallery-thread" }));
 }
 
 describe("compiled component renderers", () => {
-  it("has one renderer registry entry for every private gallery tool", () => {
-    expect([...RENDERER_NAMES].sort()).toEqual(GALLERY.map((spec) => spec.name).sort());
+  it("has one renderer and one preview fixture for every private gallery tool", () => {
+    const galleryNames = GALLERY.map((spec) => spec.name).sort();
+    expect([...RENDERER_NAMES].sort()).toEqual(galleryNames);
+    expect(COMPONENT_GALLERY_MESSAGES.map((message) => message.component?.name).sort()).toEqual(galleryNames);
   });
 
-  it.each(compiledNames)("renders %s from its bounded gallery fixture", (name) => {
+  it.each(GALLERY.map((spec) => spec.name))("renders %s from its bounded gallery fixture", (name) => {
     const message = COMPONENT_GALLERY_MESSAGES.find((candidate) => candidate.component?.name === name);
     if (!message) throw new Error(`missing gallery fixture for ${name}`);
     const html = renderMessage(message);

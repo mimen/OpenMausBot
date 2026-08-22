@@ -2,8 +2,8 @@
 // Per-bot settings (persona, model, computer) stay in SettingsPanel — this
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
-import { useEffect, useRef, useState } from "react";
-import { Coins, KeyRound, Monitor, Smartphone, Terminal, User, Volume2, X } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Coins, KeyRound, LayoutGrid, Monitor, Smartphone, Terminal, User, Volume2, X } from "lucide-react";
 import { useStore, type AppSettingsSection } from "@/state/store";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
 import { useUpdaterState } from "@/lib/updater";
@@ -17,6 +17,10 @@ import { SkinPicker } from "./SkinPicker";
 import { RoomTurnTimeoutSettings } from "./RoomTurnTimeoutSettings";
 import { cn } from "@/lib/cn";
 
+const ComponentsGallerySettings = lazy(() =>
+  import("./ComponentsGallerySettings").then((module) => ({ default: module.ComponentsGallerySettings })),
+);
+
 const SECTIONS: Array<{ id: AppSettingsSection; label: string; icon: typeof User }> = [
   { id: "general", label: "General", icon: User },
   { id: "connections", label: "Connections", icon: KeyRound },
@@ -24,6 +28,7 @@ const SECTIONS: Array<{ id: AppSettingsSection; label: string; icon: typeof User
   { id: "companion", label: "Companion", icon: Smartphone },
   { id: "computer", label: "Local VM", icon: Monitor },
   { id: "voice", label: "Voice", icon: Volume2 },
+  { id: "components", label: "Components", icon: LayoutGrid },
   { id: "usage", label: "Usage", icon: Coins },
 ];
 
@@ -254,6 +259,12 @@ export function SettingsModal() {
             {section === "voice" && <VoiceSettings />}
 
             {section === "computer" && <LocalComputerSection />}
+
+            {section === "components" && (
+              <Suspense fallback={<p className="text-[13px] text-ink-secondary">Loading components…</p>}>
+                <ComponentsGallerySettings />
+              </Suspense>
+            )}
 
             {section === "usage" && <UsageSection />}
           </div>

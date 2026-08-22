@@ -137,7 +137,7 @@ async function capture(target, name, viewport) {
     await client.command("Page.reload", { ignoreCache: true });
     await waitForDocument(client);
     await client.command("Runtime.evaluate", {
-      expression: "document.fonts.ready.then(() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => { const figures = document.querySelectorAll('figure'); const alerts = [...document.querySelectorAll('[role=alert]')].map(element => element.textContent?.trim()).filter(Boolean); if (figures.length === 7 && alerts.length === 0) requestAnimationFrame(() => requestAnimationFrame(resolve)); else if (alerts.length > 0) reject(new Error('gallery rendered an error fallback: ' + alerts.join(' | '))); else if (Date.now() > deadline) reject(new Error('seven healthy gallery components did not render')); else setTimeout(check, 50); }; check(); }))",
+      expression: "document.fonts.ready.then(() => new Promise((resolve, reject) => { const deadline = Date.now() + 10000; const check = () => { const figures = document.querySelectorAll('figure'); const alerts = [...document.querySelectorAll('[role=alert]')].map(element => element.textContent?.trim()).filter(Boolean); if (figures.length === 12 && alerts.length === 0) requestAnimationFrame(() => requestAnimationFrame(resolve)); else if (alerts.length > 0) reject(new Error('gallery rendered an error fallback: ' + alerts.join(' | '))); else if (Date.now() > deadline) reject(new Error('twelve healthy gallery components did not render')); else setTimeout(check, 50); }; check(); }))",
       awaitPromise: true,
     });
     const extent = await client.command("Runtime.evaluate", {
