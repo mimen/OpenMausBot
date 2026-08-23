@@ -112,6 +112,14 @@ describe("autoDecision", () => {
     expect(autoDecision({ alwaysAllow: ["Bash"] }, "Bash", "sudo rm -rf /var")).toBeNull();
   });
 
+  it("never answers a question tool — auto mode included (#askuserquestion)", () => {
+    const bot = { autoApprove: true, alwaysAllow: ["AskUserQuestion", "ask_user", "mcp__ogb__AskUserQuestion"] };
+    expect(autoDecision(bot, "AskUserQuestion", '{"questions":[{"question":"Revert the moves?"}]}')).toBeNull();
+    expect(autoDecision(bot, "ask_user", "Which branch?")).toBeNull();
+    // even under an MCP namespace prefix the bare name is recognized
+    expect(autoDecision(bot, "mcp__ogb__AskUserQuestion", "pick one")).toBeNull();
+  });
+
   it("never delegates a local-computer request to auto or remembered grants", () => {
     const bot = {
       autoApprove: true,

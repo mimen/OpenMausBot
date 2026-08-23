@@ -6,7 +6,10 @@
 //
 //   approve   — the CLI calls this for any tool use its permission mode
 //               would deny; the answer is the --permission-prompt-tool
-//               JSON contract ({behavior:"allow"|"deny", …}).
+//               JSON contract ({behavior:"allow"|"deny", …}). The CLI's
+//               built-in AskUserQuestion arrives here too — and is
+//               re-labeled question-kind below, because no grant may
+//               ever answer for the person.
 //   ask_user  — the agent can pose a question mid-run and wait; the
 //               human's words come back verbatim.
 //
@@ -54,6 +57,95 @@ conn.on("data", (chunk) => {
 });
 
 const send = (obj: unknown) => process.stdout.write(JSON.stringify(obj) + "\n");
+
+// The CLI's built-in AskUserQuestion reaches this proxy through the SAME
+// `approve` call as a permission ask (tool_name="AskUserQuestion"), but it
+// is a question, not an action: no grant — auto mode or "always allow" —
+// may answer for the person. So it travels to the broker as question-kind,
+// which the server only ever shows as a card, and on resolution we hand
+// the CLI back the permission JSON contract it expects, with the human's
+// selections injected as updatedInput.answers (the documented headless
+// answer shape: each question's text → chosen label or free text).
+const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
+const QUESTION_TIMEOUT_NOTE = "OpenMausBot: nobody answered in time. Use your best judgment and continue.";
+
+interface ApprovalArgs {
+  tool_name?: unknown;
+  input?: unknown;
+}
+
+function isAskUserQuestion(args: ApprovalArgs): boolean {
+  return args.tool_name === ASK_USER_QUESTION_TOOL;
+}
+
+/** The question list of an AskUserQuestion payload, read defensively —
+ * the CLI hands this proxy arbitrary JSON, and a malformed entry must
+ * degrade to being skipped rather than crashing the proxy mid-ask. */
+// SAFETY: the casts below only re-view external JSON that every field read
+// re-checks; nothing here trusts a shape it has not verified.
+function wireQuestions(input: unknown): Array<Record<string, unknown>> {
+  const questions = (input as { questions?: unknown } | undefined)?.questions;
+  return Array.isArray(questions) ? (questions as Array<Record<string, unknown>>) : [];
+}
+
+/** The card text for an AskUserQuestion approve call: every question's
+ * text joined, mirroring how the codex driver summarizes its questions. */
+export function questionSummary(args: ApprovalArgs): string {
+  const texts = wireQuestions(args.input)
+    .map((q) => (typeof q.question === "string" ? q.question : typeof q.header === "string" ? q.header : ""))
+    .filter(Boolean);
+  return texts.length ? texts.join(" · ").slice(0, 300) : ASK_USER_QUESTION_TOOL;
+}
+
+/** One-tap choices: the labels of the FIRST question, which is also what
+ * the codex driver offers; later questions stay answerable as free text. */
+export function questionChoices(args: ApprovalArgs): string[] | undefined {
+  const [first] = wireQuestions(args.input);
+  if (!first || !Array.isArray(first.options)) return undefined;
+  // SAFETY: options entries are external JSON; only string labels survive.
+  const labels = first.options.filter((o): o is Record<string, unknown> => typeof o === "object" && o !== null);
+  const names = labels.map((o) => (typeof o.label === "string" ? o.label : "")).filter(Boolean);
+  return names.length ? names.slice(0, 5) : undefined;
+}
+
+/** The transport ask an AskUserQuestion approve call becomes. */
+export function askUserQuestionAsk(args: ApprovalArgs) {
+  return {
+    kind: "question" as const,
+    tool: ASK_USER_QUESTION_TOOL,
+    input: { question: questionSummary(args), choices: questionChoices(args) },
+  };
+}
+
+/** The MCP tool result text for a resolved AskUserQuestion approve call.
+ * An answered question allows the tool WITH the answers; anything else —
+ * a timeout note, a system wrap-up, a deny — denies with that message so
+ * the model reads why instead of mistaking silence for consent. */
+export function askUserQuestionReply(args: ApprovalArgs, answer: { behavior: string; message?: string }): string {
+  if (answer.behavior !== "answer") {
+    return JSON.stringify({ behavior: "deny", message: answer.message || "Denied from OpenMausBot" });
+  }
+  // SAFETY: wireQuestions shape-checks each element of the CLI's JSON; only
+  // entries carrying a string `question` can key the answers map.
+  const answered = wireQuestions(args.input).filter((q): q is { question: string } => typeof q.question === "string");
+  // the timeout note is guidance, not a selection — deny with it so the
+  // model knows nobody chose, rather than reading it as an answer
+  if (answer.message === QUESTION_TIMEOUT_NOTE || !answered.length) {
+    return JSON.stringify({
+      behavior: "deny",
+      message: answer.message || "OpenMausBot: nobody answered the questions.",
+    });
+  }
+  const answers = Object.fromEntries(
+    answered.map((q) => [q.question, answer.message ?? ""] as const),
+  );
+  return JSON.stringify({
+    behavior: "allow",
+    // SAFETY: the CLI's own approve input echoed back with only `answers`
+    // added — the shape the headless AskUserQuestion contract documents.
+    updatedInput: { ...(args.input as object), answers },
+  });
+}
 
 const TOOLS = [
   {
@@ -106,6 +198,9 @@ async function handle(msg: any) {
     const args = msg.params?.arguments ?? {};
     const askId = randomUUID();
     const isQuestion = name === "ask_user";
+    // an AskUserQuestion arrives through `approve` but must travel and
+    // resolve as a QUESTION — no grant may ever answer it
+    const askQuestion = !isQuestion && name === "approve" && isAskUserQuestion(args);
     // the CLI may include its own suggested permission rules; on allow we
     // hand them straight back as updatedPermissions so claude stops asking
     // at its own layer — no invented rule syntax (agentcal)
@@ -119,22 +214,26 @@ async function handle(msg: any) {
       if (conn.destroyed) return dead();
       const ask = isQuestion
         ? { t: "ask", id: askId, kind: "question", tool: "ask_user", input: { question: args.question, choices: args.choices } }
-        : { t: "ask", id: askId, tool: args.tool_name, input: args.input };
+        : askQuestion
+          ? { t: "ask", id: askId, ...askUserQuestionAsk(args) }
+          : { t: "ask", id: askId, tool: args.tool_name, input: args.input };
       try {
         conn.write(JSON.stringify(ask) + "\n");
       } catch {
         dead();
       }
     });
-    let text = answer.message || "No answer was given — use your best judgment.";
-    if (!isQuestion) {
-      if (answer.behavior === "allow") {
-        const result: AllowPermissionResult = { behavior: "allow", updatedInput: args.input ?? {} };
-        if (answer.always && suggestions) result.updatedPermissions = suggestions;
-        text = JSON.stringify(result);
-      } else {
-        text = JSON.stringify({ behavior: "deny", message: answer.message || "Denied from OpenMausBot" });
-      }
+    let text;
+    if (isQuestion) {
+      text = answer.message || "No answer was given — use your best judgment.";
+    } else if (askQuestion) {
+      text = askUserQuestionReply(args, answer);
+    } else if (answer.behavior === "allow") {
+      const result: AllowPermissionResult = { behavior: "allow", updatedInput: args.input ?? {} };
+      if (answer.always && suggestions) result.updatedPermissions = suggestions;
+      text = JSON.stringify(result);
+    } else {
+      text = JSON.stringify({ behavior: "deny", message: answer.message || "Denied from OpenMausBot" });
     }
     return send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text }] } });
   }

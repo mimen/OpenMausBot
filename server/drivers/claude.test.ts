@@ -709,6 +709,82 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((e) => e.type === "turn.completed");
   });
 
+  it("routes an AskUserQuestion ask as question-kind with choices, never permission", async () => {
+    await create("hang");
+    await instance.adapter.sendTurn({ threadId: "t-askq", text: "go" });
+    await recorder.until((e) => e.type === "session.started");
+
+    const conn = await connectSocket(permissionSocketPath("t-askq"));
+    conn.write(
+      JSON.stringify({
+        t: "ask",
+        id: "askq-1",
+        kind: "question",
+        tool: "AskUserQuestion",
+        input: { question: "Revert the moves?", choices: ["Keep them", "Revert them"] },
+      }) + "\n",
+    );
+
+    const opened = await recorder.until((e) => e.type === "request.opened" && e.requestId === "askq-1");
+    expect(opened).toMatchObject({
+      requestType: "question",
+      tool: "AskUserQuestion",
+      summary: "Revert the moves?",
+      choices: ["Keep them", "Revert them"],
+    });
+
+    // a question resolves as conversation, not authorization — and only
+    // an answer is accepted for it
+    await expect(instance.adapter.respondToRequest("t-askq", "askq-1", { behavior: "answer", message: "Keep them" })).resolves.toBe(
+      "answered",
+    );
+
+    conn.end();
+    await instance.adapter.interruptTurn("t-askq");
+    await recorder.until((e) => e.type === "turn.completed");
+  });
+
+  it("routes an AskUserQuestion-shaped ask as a question, never a permission", async () => {
+    await create("hang");
+    await instance.adapter.sendTurn({ threadId: "t-askq", text: "go" });
+    await recorder.until((e) => e.type === "session.started");
+
+    const conn = await connectSocket(permissionSocketPath("t-askq"));
+
+    // what the permission proxy sends once it has re-labeled the CLI's
+    // built-in AskUserQuestion approve call as question-kind
+    conn.write(
+      JSON.stringify({
+        t: "ask",
+        id: "askq-1",
+        kind: "question",
+        tool: "AskUserQuestion",
+        input: { question: "Revert the moves?", choices: ["Keep", "Revert"] },
+      }) + "\n",
+    );
+
+    const opened = await recorder.until((e) => e.type === "request.opened" && e.requestId === "askq-1");
+    expect(opened).toMatchObject({
+      requestType: "question",
+      tool: "AskUserQuestion",
+      summary: "Revert the moves?",
+      choices: ["Keep", "Revert"],
+    });
+
+    // answering is conversation, not authorization — and an allow/deny
+    // attempt cannot resolve a question-kind ask
+    await expect(
+      instance.adapter.respondToRequest("t-askq", "askq-1", { behavior: "allow" }),
+    ).resolves.toBe("unavailable");
+    await expect(
+      instance.adapter.respondToRequest("t-askq", "askq-1", { behavior: "answer", message: "Keep" }),
+    ).resolves.toBe("answered");
+
+    conn.end();
+    await instance.adapter.interruptTurn("t-askq");
+    await recorder.until((e) => e.type === "turn.completed");
+  });
+
   it("passes effort to the CLI, and omits the flag when unset", async () => {
     await create();
     const dump = join(scratch, "effort.json");

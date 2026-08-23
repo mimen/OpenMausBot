@@ -1,8 +1,10 @@
 // Auto mode: when a bot may answer its own permission requests.
 //
 // Two ways in — the bot is in auto mode, or the user pressed "Always
-// allow" for that one tool — and one way out: anything that reads as
-// destructive stops and asks a human anyway.
+// allow" for that one tool — and two ways out: anything that reads as
+// destructive stops and asks a human anyway, and a question tool never
+// delegates at all, because answering for the person is not a grant's
+// to give.
 //
 // The guard is deliberately tiny and literal. It is NOT a security
 // boundary (an agent set on damage has a thousand spellings for `rm`);
@@ -29,6 +31,16 @@ const SENSITIVE = [
   /security\s+find-(generic|internet)-password|\bkeychain\b/i,
   /\bcredentials?\.json\b|\bserviceaccount\b/i,
 ];
+
+// A question is a human decision, not an action to delegate. Providers
+// normally label these question-kind upstream, but the guard holds even
+// when one arrives mislabeled as a permission request — the failure this
+// exists to prevent is exactly a machine answering for its person.
+const QUESTION_TOOLS = new Set(["askuserquestion", "ask_user", "ask"]);
+
+function isQuestionTool(tool: string): boolean {
+  return QUESTION_TOOLS.has(tool.replace(/^mcp__[^_]+__/, "").toLowerCase());
+}
 
 /** First matching pattern's source, so a verdict can NAME the rule that
  * made it — the decision log's whole value is "which rule", and deriving
@@ -85,6 +97,7 @@ export type AutoVerdictSource =
   | "local-computer-block"
   | "destructive-guard"
   | "sensitive-guard"
+  | "question-guard"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -118,13 +131,14 @@ export function autoVerdict(
   // into them
   const destructive = matchFirst(DESTRUCTIVE, summary) ?? matchFirst(DESTRUCTIVE, tool);
   const sensitive = destructive ? null : matchFirst(SENSITIVE, summary);
+  const questionTool = !destructive && !sensitive && isQuestionTool(tool);
   // The grant is computed even when a hard block will refuse it: the row
   // worth auditing is "this WOULD have auto-approved, and only the block
   // stood in the way", which cannot be told apart from an ordinary
   // "nobody granted this" card without knowing both halves.
   const key = approvalKey(tool, summary, context?.scope);
   const grant =
-    destructive || sensitive
+    destructive || sensitive || questionTool
       ? null
       : bot.alwaysAllow?.includes(key)
         ? { approve: `auto-approved ${key} (always allowed)`, source: "always-allow" as const, rule: key }
@@ -156,7 +170,11 @@ export function autoVerdict(
   }
   if (destructive) return { approve: null, source: "destructive-guard", rule: destructive };
   if (sensitive) return { approve: null, source: "sensitive-guard", rule: sensitive };
+  if (questionTool) return { approve: null, source: "question-guard", rule: undefined };
   if (grant) return { approve: grant.approve, source: grant.source, rule: grant.rule };
+  // A question reaching this function is already a labeling bug upstream —
+  // name the guard so the decision log says why nobody answered for you.
+  if (questionTool) return { approve: null, source: "question-guard" };
   return { approve: null, source: "no-grant" };
 }
 
