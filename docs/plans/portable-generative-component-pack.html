@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="30">
+  <title>Portable generative component pack — implementation plan</title>
+  <style>
+    :root{
+      color-scheme:light;
+      --paper:#ecf0f6;--sheet:#fafbfd;
+      --ink:#17202b;--ink-soft:#414c5c;--muted:#68758a;
+      --line:#ccd4e0;--line-soft:#e3e8f0;
+      --blue:#1f5199;
+      --copper:#9d4720;--copper-soft:#f6e4da;--copper-tint:#fbf4ef;
+      --green:#22624a;--green-soft:#dcece5;
+      --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+      --body:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      --display:Georgia,"Times New Roman",serif;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.58;-webkit-font-smoothing:antialiased}
+    a{color:var(--blue);text-decoration-thickness:1px;text-underline-offset:3px}
+    code{font-family:var(--mono);font-size:.9em}
+    h1,h2,h3{text-wrap:balance}
+    p{max-width:74ch;margin:0 0 14px;text-wrap:pretty}
+    p:last-child{margin-bottom:0}
+
+    .page{width:min(1180px,calc(100% - 32px));margin:24px auto 72px}
+    .sheet{background:var(--sheet);border:1px solid var(--line);box-shadow:0 24px 70px rgba(29,42,62,.12)}
+
+    /* masthead */
+    .masthead{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(272px,.62fr);gap:48px;padding:56px 56px 50px;border-bottom:2px solid var(--ink)}
+    .eyebrow{margin:0 0 18px;padding-bottom:13px;border-bottom:1px solid var(--line);color:var(--copper);font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+    h1{margin:0;font-family:var(--display);font-size:clamp(40px,6vw,74px);font-weight:500;line-height:.97;letter-spacing:-.045em}
+    .lede{max-width:62ch;margin:26px 0 0;color:var(--ink-soft);font-size:18px;line-height:1.62}
+    .status-card{align-self:start;border:1px solid rgba(157,71,32,.22);border-left:4px solid var(--copper);background:var(--copper-soft);padding:20px 22px 22px}
+    .tag{display:block;margin-bottom:10px;color:#a4694c;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.17em;text-transform:uppercase}
+    .status-card strong{display:block;font-size:15px;line-height:1.34}
+    .status-card p{margin:12px 0 0;max-width:none;color:#6d4433;font-size:13.5px;line-height:1.5}
+    .status-card .path{margin-top:16px;padding-top:14px;border-top:1px solid rgba(157,71,32,.25);color:#7c4c35;font-family:var(--mono);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+
+    /* section frame — headings and prose sit in an indented column,
+       numbers hang in the left rail, figures bleed back out to the rail */
+    .content{padding:0 56px 62px;counter-reset:sec}
+    section{counter-increment:sec;padding:52px 0 52px 72px;border-bottom:1px solid var(--line)}
+    section:last-child{border-bottom:0}
+    h2{position:relative;margin:0 0 20px;max-width:26ch;font-family:var(--display);font-size:clamp(28px,3.3vw,38px);font-weight:500;line-height:1.08;letter-spacing:-.03em}
+    h2::before{content:counter(sec,decimal-leading-zero);position:absolute;left:-72px;top:.6em;color:var(--copper);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.08em}
+    section>p{color:var(--ink-soft);font-size:15.5px}
+    .content h3{margin:34px 0 9px;font-family:var(--display);font-size:21px;font-weight:500;letter-spacing:-.02em}
+    .decision-strip,.compiler-map,.contract,.sequence,.risk-grid,.legend{margin-left:-72px}
+    .matrix{margin-left:-72px;width:calc(100% + 72px)}
+
+    /* decision strip */
+    .decision-strip{display:grid;grid-template-columns:repeat(5,1fr);margin:0 0 30px -72px;border:1px solid var(--line);background:#fff}
+    .decision{min-width:0;padding:19px 18px 20px;border-right:1px solid var(--line);border-top:3px solid var(--copper)}
+    .decision:last-child{border-right:0}
+    .decision span{display:block;color:var(--muted);font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}
+    .decision b{display:block;margin-top:9px;font-size:15px;font-weight:600;line-height:1.3;letter-spacing:-.01em}
+
+    /* compiler map */
+    .compiler-map{display:grid;grid-template-columns:1fr 88px 1.24fr 88px 1fr;align-items:stretch;margin-top:30px}
+    .node{padding:24px 24px 26px;border:1px solid var(--line);background:#fff}
+    .node.host{border-top:5px solid var(--blue)}
+    .node.core{border-color:rgba(157,71,32,.4);border-top:5px solid var(--copper);background:var(--copper-tint);box-shadow:0 12px 32px rgba(157,71,32,.11)}
+    .content .node h3{margin:0 0 14px;padding-bottom:11px;border-bottom:1px solid var(--line-soft);font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+    .node.host h3{color:var(--blue)}
+    .node.core h3{color:var(--copper);border-bottom-color:rgba(157,71,32,.28)}
+    .node ul{margin:0;padding-left:17px;color:var(--ink-soft);font-size:13px;line-height:1.5}
+    .node li{margin-bottom:7px}
+    .node li:last-child{margin-bottom:0}
+    .arrow{display:grid;align-content:center;justify-items:center;gap:7px;text-align:center}
+    .arrow .glyph{color:var(--blue);font-family:var(--mono);font-size:26px;line-height:1}
+    .arrow .lbl{color:var(--muted);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}
+
+    /* contract listing */
+    .contract{margin:30px 0 22px -72px;border:1px solid #22334b;background:#151f2e;color:#e6ecf5}
+    .contract figcaption{padding:12px 22px;border-bottom:1px solid #2b3c55;background:#1c2839;color:#9fb2ca;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
+    .contract pre{margin:0;padding:22px 24px;overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.7}
+    .contract .key{color:#8cc9ff}
+    .contract .str{color:#f0b891}
+
+    /* ownership matrix */
+    .matrix{border-collapse:collapse;margin-top:24px;font-size:13.5px}
+    .matrix th,.matrix td{border:1px solid var(--line);padding:13px 15px;text-align:left;vertical-align:top}
+    .matrix thead th{background:var(--ink);color:#edf1f7;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase}
+    .matrix tbody td{background:#fff}
+    .matrix tbody td:first-child{font-weight:600}
+    .matrix tbody td:nth-child(2){background:var(--copper-tint)}
+    .yes{color:var(--copper);font-weight:700}
+    .host-only{color:var(--blue);font-weight:700}
+    .none{color:var(--muted)}
+    .legend{display:flex;flex-wrap:wrap;gap:20px;max-width:none;margin:14px 0 0 -72px;color:var(--muted);font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase}
+    .legend span{display:inline-flex;align-items:center;gap:8px}
+    .legend i{width:10px;height:10px}
+    .legend .pack{background:var(--copper)}
+    .legend .host{background:var(--blue)}
+
+    /* migration sequence */
+    .sequence{counter-reset:step;margin-top:26px;border-top:2px solid var(--ink)}
+    .step{counter-increment:step;display:grid;grid-template-columns:70px minmax(0,1fr);border-bottom:1px solid var(--line)}
+    .step::before{content:counter(step,decimal-leading-zero);padding-top:21px;color:var(--copper);font-family:var(--mono);font-size:12px;font-weight:700;text-align:center}
+    .step>div{padding:18px 24px 21px;border-left:1px solid var(--line)}
+    .content .step h3{margin:0 0 6px;font-family:var(--body);font-size:16px;font-weight:650;letter-spacing:-.01em}
+    .step p{max-width:72ch;margin:0;color:var(--ink-soft);font-size:14px}
+
+    /* failure modes */
+    .risk-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:24px}
+    .risk{padding:18px 20px 20px;border:1px solid var(--line);border-left:3px solid var(--copper);background:#fff}
+    .risk strong{display:block;font-size:14.5px;line-height:1.35}
+    .risk p{max-width:none;margin:13px 0 0;color:var(--ink-soft);font-size:13px}
+    .risk p::before{content:"Closed by";display:block;margin-bottom:5px;color:var(--muted);font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}
+
+    /* acceptance */
+    section.acceptance{padding:34px 36px 36px;border-left:5px solid var(--green);background:var(--green-soft)}
+    .acceptance h2{max-width:30ch;color:#153f2f;font-size:clamp(25px,2.8vw,31px)}
+    .acceptance h2::before{position:static;display:block;margin-bottom:11px;color:var(--green)}
+    .acceptance ul{counter-reset:ac;columns:2;column-gap:44px;margin:22px 0 0;padding:0;list-style:none}
+    .acceptance li{position:relative;counter-increment:ac;break-inside:avoid;margin-bottom:11px;padding-left:34px;color:#1c3a30;font-size:14px;line-height:1.5}
+    .acceptance li::before{content:counter(ac,decimal-leading-zero);position:absolute;left:0;top:1px;color:var(--green);font-family:var(--mono);font-size:11px;font-weight:700}
+    .acceptance .small{max-width:none;margin:26px 0 0;padding-top:16px;border-top:1px solid rgba(34,98,74,.28);color:#3d5f52;font-size:12.5px}
+    .acceptance .small strong{margin-right:4px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+
+    @media(max-width:860px){
+      .page{width:calc(100% - 20px);margin:14px auto 48px}
+      .masthead{grid-template-columns:1fr;gap:30px;padding:36px 24px 32px}
+      .content{padding:0 24px 40px}
+      section{padding:38px 0}
+      h2::before{position:static;display:block;margin-bottom:10px}
+      .decision-strip,.compiler-map,.contract,.sequence,.risk-grid,.legend{margin-left:0}
+      .matrix{margin-left:0;width:100%}
+      .decision-strip{grid-template-columns:1fr 1fr}
+      .decision{border-bottom:1px solid var(--line)}
+      .decision:nth-child(2n){border-right:0}
+      .decision:last-child{grid-column:1/-1;border-right:0;border-bottom:0}
+      .compiler-map{grid-template-columns:1fr;gap:12px}
+      .arrow{min-height:40px}
+      .arrow .glyph{display:inline-block;transform:rotate(90deg)}
+      .risk-grid{grid-template-columns:1fr}
+      section.acceptance{padding:28px 22px 30px}
+      .acceptance ul{columns:1}
+    }
+    @media print{
+      body{background:#fff}
+      .page{width:100%;margin:0}
+      .sheet{border:0;box-shadow:none}
+      section,.risk,.step,.node{break-inside:avoid}
+    }
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  </style>
+  <script>const key="portable-generative-component-pack-scroll";addEventListener("beforeunload",()=>sessionStorage.setItem(key,String(scrollY)));addEventListener("DOMContentLoaded",()=>{const saved=Number(sessionStorage.getItem(key));if(Number.isFinite(saved))requestAnimationFrame(()=>scrollTo(0,saved))});</script>
+</head>
+<body>
+<main class="page sheet">
+<header class="masthead"><div><p class="eyebrow">Cross-host implementation plan</p><h1>Define once.<br>Compile native.</h1><p class="lede">A standalone component pack will own canonical view schemas, React renderers, fixtures, action contracts, and stable IDs. Deterministic compilers will emit the exact bindings OpenBot and OpenMausBot already expect, preserving each host’s transport, governance, persistence, and security boundaries.</p></div><aside class="status-card"><span class="tag">Status</span><strong>Implementation authorized</strong><p>Authorized in chat after the architecture, package ownership, release model, upstream seam, and security boundaries were settled and independently reviewed.</p><p class="path">/Users/mimen/Programming/Repos/OpenMausBot/.claude/worktrees/feat-component-gallery/docs/plans/portable-generative-component-pack.html</p></aside></header>
+<div class="content">
+<section><h2>The decision, in five lines</h2><div class="decision-strip"><div class="decision"><span>Home</span><b>Public standalone repository</b></div><div class="decision"><span>Identity</span><b>mimen/generative-ui-pack</b></div><div class="decision"><span>Package</span><b>One version, subpath exports</b></div><div class="decision"><span>License</span><b>Apache-2.0</b></div><div class="decision"><span>Delivery</span><b>GitHub tags; npm deferred</b></div></div><p>A standalone repository wins over living inside either host because neither application should own the other’s dependency. One package version wins over several packages because schemas, renderers, and compilers must advance together. Apache-2.0 preserves the license and attribution of the OpenMausBot source being extracted while remaining consumable by MIT OpenBot. GitHub tags provide reviewable pinned inputs now; npm publication waits until both host targets prove stable.</p><p>The first release, <code>v0.1.0</code>, covers Record, Metrics, Checklist, and Quote because they prove rendering without host actions against stock OpenBot. Todoist is built in the same task but crosses a separate release gate: the secure component-function and review/apply seam currently exists only on the divergent local <code>setup/local</code> branch, not on <code>CopilotKit/openbot</code> upstream. This task therefore ports the minimum secure seam onto current upstream commit <code>6826e11afd52f03c30af2d873203792acad95f63</code> as a PR-ready branch. Todoist enters a later pack tag only after that upstream seam is available from a public commit. OpenMausBot can consume <code>v0.1.0</code> immediately without creating or depending on an OpenBot fork.</p></section>
+<section><h2>The pack owns meaning; hosts own authority</h2><p>The shared boundary is deliberately narrower than either application. It owns what a component is and how it renders. It does not decide who may call it, where data comes from, how a conversation persists, or which trusted process performs an action. In the diagram, <code>GALLERY</code> is OpenBot’s compiled component catalogue; <code>GallerySpec</code> is OpenMausBot’s server tool record; governed functions are OpenBot server calls allowed by deployment policy; and private MCP is OpenMausBot’s per-turn Model Context Protocol tool transport.</p><div class="compiler-map" role="group" aria-label="Portable pack compiles into two host-native bindings"><article class="node host"><h3>OpenBot binding</h3><ul><li>Exports native <code>GALLERY</code> modules</li><li>Uses CopilotKit Zod parameters</li><li>Maps reads and actions to governed functions</li><li>Leaves publication and per-Bot grants in PostgreSQL</li></ul></article><div class="arrow"><span class="glyph" aria-hidden="true">←</span><span class="lbl">compiles to</span></div><article class="node core"><h3>Portable pack</h3><ul><li>Canonical IDs and schema versions</li><li>Resolved view schemas</li><li>Pure React renderers and previews</li><li>Capability-driven action contracts</li><li>Compiled CSS-variable theme</li></ul></article><div class="arrow"><span class="glyph" aria-hidden="true">→</span><span class="lbl">compiles to</span></div><article class="node host"><h3>OpenMaus binding</h3><ul><li>Exports native <code>GallerySpec</code> records</li><li>Maps private MCP names and input schemas</li><li>Uses server resolvers for trusted enrichment</li><li>Leaves replay, provenance, and inter-process communication in OpenMaus</li></ul></article></div></section>
+<section><h2>The contract separates what the model sends from what the screen shows</h2><p>A host tool’s input is not necessarily the component’s renderable view. A resolved view is validated, display-ready data after a host has loaded or enriched trusted facts. Todoist proves the distinction: OpenMaus receives exact task IDs and resolves trusted tasks on the server; OpenBot receives a filter, project, and limit, then its renderer loads tasks through the governed <code>todoistRead</code> function. Both render one canonical view without sharing their data-access path.</p><figure class="contract"><figcaption>Portable view plus structurally separate host ports</figcaption><pre><span class="key">defineComponent</span>({
+  <span class="key">id</span>: <span class="str">"todoist.tasks"</span>,
+  <span class="key">viewVersion</span>: 1,
+  <span class="key">viewSchema</span>: TodoistTasksVisualSchema,
+  <span class="key">preview</span>: todoistTasksPreview,
+  <span class="key">Renderer</span>: TodoistTasksView,
+  <span class="key">actions</span>: TodoistActionSchema,
+  <span class="key">bindings</span>: {
+    <span class="key">openbot</span>: { toolName: <span class="str">"showTodoistTasks"</span>, kind: <span class="str">"card"</span>, inputSchema: TodoistFilterSchema, reads: [<span class="str">"todoistRead"</span>, <span class="str">"todoistTaskReview"</span>, <span class="str">"todoistTaskApply"</span>] },
+    <span class="key">openmaus</span>: { toolName: <span class="str">"show_todoist_tasks"</span>, kind: <span class="str">"action"</span>, inputSchema: TodoistTaskIdsSchema, persistedSchema: OpenMausTodoistPersistedSchema }
+  }
+});
+
+<span class="key">type ResolvePort</span>&lt;Input, View&gt; = { resolve(input: Input): Promise&lt;ResolveResult&lt;View&gt;&gt; };
+<span class="key">type DispatchPort</span>&lt;Action&gt; = {
+  capabilities: ReadonlySet&lt;Action[<span class="str">"type"</span>]&gt;;
+  dispatch(action: Action): Promise&lt;{ status: <span class="str">"succeeded"</span> | <span class="str">"pending"</span> | <span class="str">"stale"</span> | <span class="str">"refused"</span> | <span class="str">"failed"</span>; message?: string }&gt;;
+};
+<span class="key">type TodoistTasksViewProps</span> = { tasks: PresentedTask[]; rows: RowPresentation[]; dispatch?: DispatchPort&lt;TodoistAction&gt; };</pre></figure><p>The shared renderer is presentation-only. A host controller resolves data, chooses effective completion state, owns async row state, and passes a per-call dispatch closure. OpenBot’s controller runs <code>todoistRead</code> on mount, lets local post-action state win, and dispatches through the existing <code>todoistTaskReview</code> → short-lived token → <code>todoistTaskApply</code> sequence. OpenMausBot resolves once on the trusted server, persists authorization-bearing <code>recurring</code>, shown due date, and <code>unavailable</code> fields, lets patched server view state win, and constructs dispatch per <code>{threadId, callId}</code>; those correlation values never come from renderer action payloads. The compiler emits the host tool name—not the canonical ID—into every OpenBot route, <code>GALLERY</code> record, governed-function call, and exact <code>reads()</code> list.</p></section>
+<section><h2>Exactly what is shared</h2><p>AG-UI is OpenBot’s agent-to-application event protocol; CopilotKit Intelligence is its conversation service. A <code>ComponentCall</code> is OpenMausBot’s persisted component message, including arguments and provider origin. These host contracts remain outside the pack.</p><table class="matrix"><thead><tr><th>Concern</th><th>Portable pack</th><th>OpenBot</th><th>OpenMausBot</th></tr></thead><tbody><tr><td>Canonical view schema and version</td><td class="yes">Owns</td><td>Consumes</td><td>Consumes</td></tr><tr><td>React renderer, preview, accessibility</td><td class="yes">Owns</td><td>Renders</td><td>Renders</td></tr><tr><td>Tool name and input schema</td><td>Declares binding metadata</td><td class="host-only">Owns native binding</td><td class="host-only">Owns native binding</td></tr><tr><td>Data resolution</td><td>Defines resolved view</td><td class="host-only">Governed functions</td><td class="host-only">Trusted server enrichers</td></tr><tr><td>Actions</td><td>Typed intent and capabilities</td><td class="host-only">Component function / human-in-the-loop</td><td class="host-only">Electron or same-origin boundary</td></tr><tr><td>Availability and publication</td><td class="none">None</td><td class="host-only">PostgreSQL governance</td><td class="host-only">Mounted private UI integration</td></tr><tr><td>Conversation persistence</td><td class="none">None</td><td class="host-only">CopilotKit Intelligence</td><td class="host-only">SQLite ComponentCall</td></tr><tr><td>Transport</td><td class="none">None</td><td class="host-only">AG-UI / CopilotKit</td><td class="host-only">Private MCP</td></tr></tbody></table><p class="legend"><span><i class="pack"></i>Portable pack owns</span><span><i class="host"></i>Host owns</span></p></section>
+<section><h2>Where the code lives, and what gets generated</h2><h3>New repository: <code>mimen/generative-ui-pack</code></h3><p>One root package exports <code>./core</code>, <code>./react</code>, <code>./compiler</code>, <code>./openbot</code>, and <code>./openmaus</code>. A compatibility manifest records the package version, generated-file format, and exact host commit supported by each compiler target. Tagged releases include built JavaScript, declarations, and CSS so Git consumers execute no lifecycle build. Tags are append-only release inputs: the release workflow refuses an existing version and both host manifests record the tag’s commit SHA. Public npm publication waits until both adapters have survived real use.</p><h3>OpenBot upstream seam and overlay</h3><p>Stock compatibility targets public upstream commit <code>6826e11afd52f03c30af2d873203792acad95f63</code>. Before Todoist can be claimed compatible, a PR-ready upstream branch ports only the minimum component-function contract, external-actor checks, review-token machinery, Todoist read/review/apply functions, routes, database wiring, and tests from the divergent local branch. Calendar and Todoist-triage features are excluded. Until that seam is publicly reachable, public package CI and released manifests cover only the four read-only components.</p><p>The compiler overlay is a name-level, contract-versioned patch. It adds the pack at an exact Git commit SHA to <code>app/package.json</code>, regenerates and verifies <code>bun.lock</code>, imports compiled pack CSS, and replaces only the definitions owned by the pack. For mixed modules such as <code>cards.tsx</code>, a source-hash-guarded unified patch swaps Record, Metrics, and Checklist exports/bindings to package imports while preserving <code>showNotice</code> and every unowned declaration. The patch manifest records the expected source hash, exact changed ranges, generated files, owned names, and retained names.</p><p>Verification asserts that every pre-overlay component name still exists afterward unless explicitly retired, every name is unique, and the OpenBot tool input schemas for existing names remain JSON-schema compatible with the pinned baseline. This preserves governance rows and avoids both duplicate registration and accidental loss of an unowned component.</p><p>A disposable checkout receives only the declared overlay patch, then performs a clean install, typecheck, tests, production build, and gallery capture. The verifier rejects changes outside the manifest and confirms the installed pack SHA. A later upstream commit requires a newly tested compatibility entry rather than silently retargeting an old one.</p><h3>OpenMausBot integration</h3><p>OpenMausBot replaces four read-only renderers first, then Todoist after the upstream seam gate. New calls add top-level <code>componentId</code> and <code>viewVersion</code> fields beside the existing host tool name; both strict current and legacy stored-call schemas explicitly accept those optional fields, while new writers require them. They never enter component <code>arguments</code>. The stored-call parser maps known legacy names to version 1, retains arguments unchanged, and keeps a decoder for each persisted view version. Unknown names keep the existing fallback.</p><p>The OpenMaus Todoist persisted schema extends the common visual task with required authorization metadata: <code>recurring</code>, nullable shown due date, and <code>unavailable</code>. The resolver must supply those fields; no security-relevant default is permitted. Replay/action tests cover unavailable rows and recurring tasks whose live due date advanced after the shown occurrence. Candidate integration pins an exact pack SHA; after tagging the unchanged commit, OpenMaus switches to the tag, verifies tag-to-SHA identity, regenerates its lockfile, and reruns install, replay, actions, build, and gallery evidence.</p></section>
+<section><h2>Migration sequence</h2><div class="sequence"><article class="step"><div><h3>Establish the package and compiler contracts</h3><p>Create the standalone Apache-2.0 repository, strict build, one-package exports, compiled CSS, deterministic fixtures, host-kind mappings, replacement-patch manifest, compatibility manifest, and candidate-SHA verification command.</p></div></article><article class="step"><div><h3>Ship the read-only path first</h3><p>Extract Record, Metrics, Checklist, and Quote. Generate replacement bindings against public OpenBot upstream and OpenMausBot, test one candidate SHA in both hosts, tag that unchanged commit as <code>v0.1.0</code>, verify tag identity, rerun tag-based tests, and land the OpenMaus read-only migration.</p></div></article><article class="step"><div><h3>Port the minimum secure Todoist seam onto upstream</h3><p>Create an isolated branch from current <code>CopilotKit/openbot</code> upstream. Port component-function authorization, external-actor enforcement, review tokens, Todoist read/review/apply, routing, audit, and tests without Calendar or triage. Produce a PR-ready diff and verification evidence; do not post externally without the outbound approval surface.</p></div></article><article class="step"><div><h3>Extract Todoist as view plus host controllers</h3><p>Share the visual schema, fixture, and presentation component. OpenBot’s controller owns mount-time reads, local completion precedence, and review/apply dispatch. OpenMausBot’s controller owns server-view precedence and a per-<code>ComponentCall</code> dispatch closure; server-only resolution never enters the renderer bundle.</p></div></article><article class="step"><div><h3>Add versioned OpenMaus persistence</h3><p>Extend strict stored-call schemas with top-level canonical ID/version fields, legacy alias inference, retained decoders, and required OpenMaus authorization metadata. Verify old rows, new rows, unknown names, unavailable tasks, recurring occurrence changes, recovery, and pending reconciliation.</p></div></article><article class="step"><div><h3>Release Todoist only from a public OpenBot base</h3><p>Once the secure seam is reachable from an upstream or public PR commit, add that commit to the compatibility manifest. Test a new pack candidate SHA against both hosts, tag the unchanged commit as the next release, verify tag identity, rerun both host suites, and then land OpenMaus Todoist migration.</p></div></article></div></section>
+<section><h2>Failure modes the implementation must close</h2><div class="risk-grid"><article class="risk"><strong>A private fork is mistaken for upstream</strong><p>Released manifests reference only publicly fetchable commits. The local <code>setup/local</code> branch is evidence for the port, never a public compatibility baseline.</p></article><article class="risk"><strong>Generated bindings duplicate or erase host components</strong><p>Source-hash-guarded name-level patches replace only owned definitions, retain every unowned name such as <code>showNotice</code>, and assert pre/post name preservation plus uniqueness.</p></article><article class="risk"><strong>One completion policy lies in one host</strong><p>Host controllers compute presented task state: OpenBot local action state wins; OpenMaus patched server state wins. The shared renderer receives already-reconciled rows.</p></article><article class="risk"><strong>Resolution crosses a trust boundary</strong><p><code>ResolvePort</code> and renderer-side <code>DispatchPort</code> are separate types. OpenMaus server resolution cannot be instantiated or bundled in the browser.</p></article><article class="risk"><strong>Actions address another transcript call</strong><p>OpenMaus dispatch is constructed per <code>{threadId, callId}</code>; renderer actions carry only task/action intent and cannot choose correlation identifiers.</p></article><article class="risk"><strong>Canonical IDs bypass OpenBot grants</strong><p>Generated OpenBot network calls always use the existing host tool name and exact function list. The compiler asserts route, catalogue name, and grant keys agree.</p></article><article class="risk"><strong>Strict stored schemas quarantine new rows</strong><p>Canonical ID/version fields are top-level and explicitly accepted by both current and legacy stored-call schemas. Replay tests cover both parse paths.</p></article><article class="risk"><strong>Security metadata is defaulted away</strong><p>The OpenMaus resolver must provide recurring, shown due, and unavailable fields. Missing fields fail closed before persistence or dispatch.</p></article><article class="risk"><strong>OpenBot’s contract drifts</strong><p>Each compiler target names a public commit and checks required files, symbols, kinds, and generated patch paths. Unknown contracts fail closed.</p></article><article class="risk"><strong>Framework or style duplication enters a host</strong><p>React, React DOM, and Zod are peer dependencies; the pack ships compiled CSS variables rather than requiring host Tailwind scanning.</p></article><article class="risk"><strong>Generated code becomes a second source</strong><p>Generated files contain adapter glue only, replace declared outputs wholesale, and are byte-stable in CI.</p></article><article class="risk"><strong>License provenance is blurred</strong><p>The pack remains Apache-2.0 with attribution for extracted OpenMausBot code.</p></article></div></section>
+<section class="acceptance"><h2>This task is complete only when all of this is true</h2><ul><li><code>v0.1.0</code> shares Record, Metrics, Checklist, and Quote with no duplicate renderer implementation.</li><li>Stock OpenBot at public commit <code>6826e11</code> builds from untouched source plus a replacement overlay containing the exact pack dependency, lockfile, CSS, and unique generated bindings.</li><li>OpenMausBot lands the four read-only components from the same tag and replays existing messages unchanged.</li><li>The public Apache-2.0 repository and append-only <code>v0.1.0</code> tag resolve to the commit tested in both hosts.</li><li>A PR-ready OpenBot branch ports the minimum secure Todoist function seam onto current upstream without Calendar or triage scope.</li><li>The shared Todoist view and host controllers preserve OpenBot review-token/apply stale-state protection and OpenMaus server enrichment, correlation, recovery, and Electron authorization.</li><li>OpenMaus new-format calls store top-level canonical ID/version fields; strict current and legacy schemas parse them, and old snake-case rows infer version 1.</li><li>Todoist tests cover unavailable rows, recurring occurrence changes, pending reconciliation, local-wins OpenBot state, and server-view-wins OpenMaus state.</li><li>Preview actions are disabled; detail headings, lists, values, and statuses remain in the accessibility tree.</li><li>Every target rejects unsupported source hashes, duplicate names, missing pre-overlay names, incompatible existing tool schemas, undeclared patch ranges, and non-deterministic output.</li></ul><p class="small"><strong>Gated after this task</strong> releasing Todoist compatibility requires the secure seam to be reachable from a public OpenBot commit, followed by candidate-SHA and final-tag verification in both hosts. Also deferred: public npm, an A2UI declarative-UI compiler target, and runtime installation into an already-built OpenBot image.</p></section>
+<section><h2>What actually shipped</h2><p><strong>Released.</strong> <code>mimen/generative-ui-pack</code> is public, Apache-2.0, and tagged <code>v0.1.0</code> resolving to <code>f44dfb7</code>. Record, Metrics, Checklist, and Quote are shared. OpenMausBot landed the migration on <code>main</code> at <code>35c5364</code>, with the four model-facing tool contracts proven byte-identical to the previous build and new calls persisting an additive canonical id and view version. Stock OpenBot at public <code>6826e11a</code> builds, typechecks, lints, passes its 116 application tests, and renders the shared components through a generated native <code>GALLERY</code> overlay applied inside a disposable clone.</p><p><strong>Where the build diverged.</strong> Three things changed under review. The pinned OpenBot baseline moved from a commit that existed only on a local branch to genuine public upstream, which also forced Todoist out of the first release. The overlay&rsquo;s in-place transaction layer&mdash;locks, journals, staged rollback, crash recovery&mdash;was deleted rather than hardened after independent review demonstrated a working write-outside-checkout escape and then a lock-ownership race; the compiler is now pure and only a compiler-owned temporary clone is ever mutated, which removed the entire vulnerability class. And the overlay now pins a release tag instead of a baked self-referencing commit and lockfile, because a commit cannot contain its own hash.</p><p><strong>Risks that were real.</strong> The plan&rsquo;s worry about preserving unowned host components was justified: OpenBot&rsquo;s <code>cards.tsx</code> also exports <code>showNotice</code>, so module-level replacement would have silently deleted a component whose publication and grant rows live in the deployment database. Name-level patching plus a pre/post name-preservation assertion closed it. The Todoist authorization worry was also justified&mdash;the first port would have bypassed the review-token and stale-state checks entirely.</p><p><strong>Still gated.</strong> Todoist is not in <code>v0.1.0</code>. Its secure component-function seam is ported onto current upstream and verified locally at <code>34d56d9</code>, but pushing to <code>CopilotKit/openbot</code> returned 403, so no public commit exists to compile against. Sharing the Todoist view stays blocked on that seam becoming publicly reachable.</p></section>
+</div></main>
+</body></html>
