@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { Json, JsonObject } from "../contracts.ts";
+import { componentVersionForToolName } from "./read-only-components.ts";
 
 export type { Json, JsonObject };
 
@@ -53,6 +54,8 @@ export type GallerySpec = {
   description: string;
   parameters: JsonSchema;
   confirmation: string;
+  componentId?: string;
+  viewVersion?: number;
   validate: (value: Json) => Result<JsonObject, string>;
 };
 
@@ -133,21 +136,47 @@ const BOUNDED_ARGUMENTS = BoundedJsonObjectSchema;
 /** Public, persisted component transcript shape. It deliberately carries no
  * completion credential: renderer clicks cross Electron IPC, while transcripts
  * remain safe to expose through SQLite and /api/bots. */
-export const ComponentCallSchema = z.object({
+const COMPONENT_CALL_FIELDS = {
   callId: z.string().min(1).max(UI_LIMITS.callId),
   name: z.string().min(1).max(UI_LIMITS.name),
+  componentId: z.string().min(1).max(UI_LIMITS.name).optional(),
+  viewVersion: z.number().int().positive().optional(),
   arguments: BOUNDED_ARGUMENTS,
   result: z.string().max(UI_LIMITS.result),
   status: z.enum(["shown", "error"]),
+};
+
+type VersionedComponentName = {
+  name: string;
+  componentId?: string;
+  viewVersion?: number;
+};
+
+function validateComponentVersion(value: VersionedComponentName, ctx: z.RefinementCtx): void {
+  const hasComponentId = value.componentId !== undefined;
+  const hasViewVersion = value.viewVersion !== undefined;
+  if (hasComponentId !== hasViewVersion) {
+    ctx.addIssue({ code: "custom", message: "componentId and viewVersion must appear together" });
+    return;
+  }
+  const legacyVersion = componentVersionForToolName(value.name);
+  if (legacyVersion && value.componentId !== undefined && value.componentId !== legacyVersion.componentId) {
+    ctx.addIssue({ code: "custom", message: "componentId does not match the stored component name" });
+  }
+}
+
+export const ComponentCallSchema = z.object({
+  ...COMPONENT_CALL_FIELDS,
   origin: ComponentOriginSchema,
-}).strict();
+}).strict().superRefine(validateComponentVersion);
 
 /** Read-only migration schema for the first generative-UI build. The legacy
  * actionToken is accepted only long enough to remove it from the SQLite row. */
-const LegacyComponentCallSchema = ComponentCallSchema.omit({ origin: true }).extend({
+const LegacyComponentCallSchema = z.object({
+  ...COMPONENT_CALL_FIELDS,
   actionToken: z.string().optional(),
   origin: ComponentOriginSchema.optional(),
-}).strict();
+}).strict().superRefine(validateComponentVersion);
 
 export type ComponentCall = z.infer<typeof ComponentCallSchema>;
 
@@ -205,20 +234,28 @@ export function parseStoredComponentActionEvent(value: Json): Result<ComponentAc
   }
 }
 
+function inferLegacyComponentVersion(call: ComponentCall): { call: ComponentCall; migrated: boolean } {
+  if (call.componentId !== undefined || call.viewVersion !== undefined) return { call, migrated: false };
+  const version = componentVersionForToolName(call.name);
+  if (!version) return { call, migrated: false };
+  return { call: { ...call, ...version }, migrated: true };
+}
+
 export function parseStoredComponentCall(value: Json | undefined): Result<{ call: ComponentCall; migrated: boolean }, string> {
   try {
     const current = ComponentCallSchema.safeParse(value);
-    if (current.success) return { ok: true, value: { call: current.data, migrated: false } };
+    if (current.success) return { ok: true, value: inferLegacyComponentVersion(current.data) };
     const legacy = LegacyComponentCallSchema.safeParse(value);
     if (!legacy.success) return { ok: false, error: "Stored component data is malformed." };
     const { actionToken: _discarded, origin, ...rest } = legacy.data;
+    const inferred = inferLegacyComponentVersion({
+      ...rest,
+      origin: origin ?? { provider: "legacy" },
+    });
     return {
       ok: true,
       value: {
-        call: {
-          ...rest,
-          origin: origin ?? { provider: "legacy" },
-        },
+        call: inferred.call,
         migrated: true,
       },
     };

@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@mimen/generative-ui-pack':
+        specifier: github:mimen/generative-ui-pack#v0.1.0
+        version: https://codeload.github.com/mimen/generative-ui-pack/tar.gz/f44dfb77edc26f5eeb3396ff5e16498a4747763e(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
       '@trycua/cua-driver':
         specifier: 0.20.0
         version: 0.20.0
@@ -780,6 +783,16 @@ packages:
   '@malept/flatpak-bundler@0.4.0':
     resolution: {integrity: sha512-9QOtNffcOF/c1seMCDnjckb3R9WHcG34tky+FHpNKKCW0wc/scYLwMtO+ptyGUfMW0/b/n4qRiALlaFHc9Oj7Q==}
     engines: {node: '>= 10.0.0'}
+
+  '@mimen/generative-ui-pack@https://codeload.github.com/mimen/generative-ui-pack/tar.gz/f44dfb77edc26f5eeb3396ff5e16498a4747763e':
+    resolution: {tarball: https://codeload.github.com/mimen/generative-ui-pack/tar.gz/f44dfb77edc26f5eeb3396ff5e16498a4747763e}
+    version: 0.1.0
+    engines: {bun: '>=1.2.0'}
+    hasBin: true
+    peerDependencies:
+      react: '>=19 <20'
+      react-dom: '>=19 <20'
+      zod: '>=4.4 <5'
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -3656,6 +3669,12 @@ snapshots:
       tmp-promise: 3.0.3
     transitivePeerDependencies:
       - supports-color
+
+  '@mimen/generative-ui-pack@https://codeload.github.com/mimen/generative-ui-pack/tar.gz/f44dfb77edc26f5eeb3396ff5e16498a4747763e(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)':
+    dependencies:
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
+      zod: 4.4.3
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true

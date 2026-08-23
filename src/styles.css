@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@mimen/generative-ui-pack/styles.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
    SKINS
@@ -63,6 +64,27 @@
   --color-scrollbar: #3d3d3d;
   /* second speed line of the mascot — contrasts against the app ground */
   --color-maus-line: #fcfcfc;
+
+  /* Portable generative UI resolves through the active OpenMaus skin. */
+  --gui-font-body: var(--font-sans);
+  --gui-font-quote: var(--font-sans);
+  --gui-color-surface: var(--color-card);
+  --gui-color-surface-raised: var(--color-raised);
+  --gui-color-text: var(--color-ink);
+  --gui-color-text-muted: var(--color-ink-secondary);
+  --gui-color-border: color-mix(in srgb, var(--color-hairline) 40%, transparent);
+  --gui-color-quote-border: var(--gui-color-border);
+  --gui-color-positive: var(--color-success);
+  --gui-color-positive-soft: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --gui-color-caution: var(--color-warning);
+  --gui-color-caution-soft: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  --gui-color-negative: var(--color-danger);
+  --gui-color-negative-soft: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  --gui-radius-frame: 1rem;
+  --gui-radius-badge: 0.375rem;
+  --gui-shadow-frame: none;
+  --gui-space-frame-inline: 1rem;
+  --gui-space-frame-block: 0.75rem;
 }
 
 /* ── Midnight ──────────────────────────────────────────────────────────────

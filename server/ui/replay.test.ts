@@ -147,7 +147,12 @@ describe("component transcript replay", () => {
 
     const restarted = new Store(() => ({ instanceId: "claude", model: "test" }));
     const replayed = restarted.messagesFor(bot.threadId)[0]?.component;
-    expect(replayed).toMatchObject({ callId: "legacy-call", origin: { provider: "legacy" } });
+    expect(replayed).toMatchObject({
+      callId: "legacy-call",
+      componentId: "checklist",
+      viewVersion: 1,
+      origin: { provider: "legacy" },
+    });
     expect(replayed).not.toHaveProperty("actionToken");
     closeMessageDb();
     const checked = new DatabaseSync(`${DATA_DIR}/messages.db`);
@@ -156,6 +161,85 @@ describe("component transcript replay", () => {
     checked.close();
     expect(row.json).not.toContain("ombui_must_disappear");
     expect(row.json).not.toContain("actionToken");
+  });
+
+  it("replays new shared calls with top-level component version metadata", async () => {
+    const store = new Store(() => ({ instanceId: "claude", model: "test" }));
+    const bot = store.createBot({ name: "Versioned" }, { seedMessages: false });
+    const shown = await showComponent({
+      threadId: bot.threadId,
+      name: "show_record_card",
+      arguments: { title: "Invoice", fields: [{ label: "Amount", value: "$42" }] },
+      origin: { provider: "claude" },
+    }, {
+      store,
+      publish: () => {},
+      dataDir: DATA_DIR,
+      todoist: fakeTodoist(new Map()),
+    });
+    if (!shown.ok) throw new Error(shown.error);
+    expect(shown.value).toMatchObject({ componentId: "record", viewVersion: 1 });
+    expect(shown.value.arguments).not.toHaveProperty("componentId");
+    expect(shown.value.arguments).not.toHaveProperty("viewVersion");
+
+    closeMessageDb();
+    const restarted = new Store(() => ({ instanceId: "claude", model: "test" }));
+    expect(restarted.messagesFor(bot.threadId)[0]?.component).toMatchObject({
+      name: "show_record_card",
+      componentId: "record",
+      viewVersion: 1,
+      arguments: { title: "Invoice", fields: [{ label: "Amount", value: "$42" }] },
+    });
+  });
+
+  it("keeps unknown stored component names on the existing fallback path", () => {
+    const store = new Store(() => ({ instanceId: "claude", model: "test" }));
+    const bot = store.createBot({ name: "Unknown" }, { seedMessages: false });
+    const message = store.appendMessage(bot.threadId, { role: "bot", kind: "text", text: "placeholder" });
+    closeMessageDb();
+    const database = new DatabaseSync(`${DATA_DIR}/messages.db`);
+    const unknown = {
+      id: message.id,
+      at: message.at,
+      parentId: message.parentId,
+      role: "bot",
+      kind: "component",
+      component: {
+        callId: "unknown-call",
+        name: "show_future_component",
+        arguments: { value: "unchanged" },
+        result: "shown",
+        status: "shown",
+        origin: { provider: "test" },
+      },
+    };
+    database.prepare("UPDATE messages SET kind = 'component', json = ? WHERE thread_id = ? AND id = ?")
+      .run(JSON.stringify(unknown), bot.threadId, message.id);
+    database.close();
+
+    const restarted = new Store(() => ({ instanceId: "claude", model: "test" }));
+    const replayed = restarted.messagesFor(bot.threadId)[0]?.component;
+    expect(replayed).toMatchObject({
+      callId: "unknown-call",
+      name: "show_future_component",
+      arguments: { value: "unchanged" },
+    });
+    expect(replayed).not.toHaveProperty("componentId");
+    expect(replayed).not.toHaveProperty("viewVersion");
+  });
+
+  it("rejects partial or contradictory stored component version metadata", () => {
+    const base = {
+      callId: "versioned",
+      name: "show_record_card",
+      arguments: { title: "Record", fields: [] },
+      result: "shown",
+      status: "shown" as const,
+      origin: { provider: "test" },
+    };
+    expect(parseStoredComponentCall({ ...base, componentId: "record" })).toMatchObject({ ok: false });
+    expect(parseStoredComponentCall({ ...base, viewVersion: 1 })).toMatchObject({ ok: false });
+    expect(parseStoredComponentCall({ ...base, componentId: "quote", viewVersion: 1 })).toMatchObject({ ok: false });
   });
 
   it("rejects deeply nested stored arguments without throwing", () => {

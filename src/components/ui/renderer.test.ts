@@ -1,7 +1,10 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { UI_LIMITS } from "../../../server/ui/contract";
-import { boundedChecklistItems, boundedMetrics, boundedRecordFields } from "./renderer";
+import type { Message } from "../../state/store";
+import { boundedChecklistItems, boundedMetrics, boundedRecordFields, ComponentRenderer } from "./renderer";
 import { boundedTodoistTasks, formatTodoistDue, todoistActionLabel } from "./todoist-tasks";
 
 describe("component renderer bounds", () => {
@@ -41,6 +44,54 @@ describe("component renderer bounds", () => {
       },
     } as const;
     expect(boundedTodoistTasks(call)).toEqual([]);
+  });
+
+  it("replays a versioned shared component by canonical id even after a tool rename", () => {
+    const message: Message = {
+      id: "message",
+      at: 1,
+      parentId: null,
+      role: "bot",
+      kind: "component",
+      text: "shown",
+      component: {
+        callId: "call",
+        name: "renamed_record_tool",
+        componentId: "record",
+        viewVersion: 1,
+        arguments: { title: "Invoice", fields: [{ label: "Amount", value: "$42" }] },
+        result: "shown",
+        status: "shown",
+        origin: { provider: "test" },
+      },
+    };
+    const markup = renderToStaticMarkup(createElement(ComponentRenderer, { message, threadId: "thread" }));
+    expect(markup).toContain("Invoice");
+    expect(markup).toContain("$42");
+  });
+
+  it("fails closed for an unsupported persisted shared view version", () => {
+    const message: Message = {
+      id: "message",
+      at: 1,
+      parentId: null,
+      role: "bot",
+      kind: "component",
+      text: "shown",
+      component: {
+        callId: "call",
+        name: "show_record_card",
+        componentId: "record",
+        viewVersion: 999,
+        arguments: { title: "Invoice", fields: [] },
+        result: "shown",
+        status: "shown",
+        origin: { provider: "test" },
+      },
+    };
+    const markup = renderToStaticMarkup(createElement(ComponentRenderer, { message, threadId: "thread" }));
+    expect(markup).toContain("not supported by this build");
+    expect(markup).not.toContain("gui-record");
   });
 
   it("drops oversized individual strings rather than mounting them", () => {

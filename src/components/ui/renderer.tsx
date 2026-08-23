@@ -1,3 +1,18 @@
+import {
+  openMausChecklistBinding,
+  openMausMetricsBinding,
+  openMausQuoteBinding,
+  openMausRecordBinding,
+} from "@mimen/generative-ui-pack/openmaus";
+import {
+  Checklist as SharedChecklist,
+  Metrics as SharedMetrics,
+  Quote as SharedQuote,
+  Record as SharedRecord,
+  type ChecklistProps,
+  type MetricsProps,
+  type RecordProps,
+} from "@mimen/generative-ui-pack/react";
 import { Component, type ComponentType, type ReactNode } from "react";
 import { z } from "zod";
 
@@ -5,6 +20,7 @@ import { componentFallback } from "@/lib/ui/fallback";
 import type { ComponentCall, Message } from "@/state/store";
 import type { Json, JsonObject } from "../../../server/contracts.ts";
 import { ComponentCallSchema, UI_LIMITS } from "../../../server/ui/contract.ts";
+import { componentVersionForToolName, type ComponentVersion } from "../../../server/ui/read-only-components.ts";
 import {
   BookingSlotSchema,
   ConversationSchema,
@@ -15,12 +31,8 @@ import {
   WeekCalendarSchema,
 } from "../../../server/ui/schemas.ts";
 import { BookingSlot } from "./booking-slot";
-import { ChecklistCard, type ChecklistItem } from "./checklist-card";
 import { Conversation } from "./conversation";
 import { EventCountdown } from "./event-countdown";
-import { MetricsCard, type Metric } from "./metrics-card";
-import { QuoteCard } from "./quote-card";
-import { RecordCard, type RecordField } from "./record-card";
 import { StatusBoard } from "./status-board";
 import { SupplementStack } from "./supplement-stack";
 import { SupplyStatus } from "./supply-status";
@@ -50,6 +62,7 @@ class ComponentBoundary extends Component<{ name: string; children: ReactNode },
 }
 
 const STRING = z.string();
+const TONE = z.enum(["neutral", "positive", "caution", "negative"]);
 const JSON_OBJECT = z.record(z.string(), z.json());
 
 function asObject(value: Json | undefined): JsonObject | null {
@@ -62,9 +75,14 @@ function stringOf(value: Json | undefined, maxLength: number = UI_LIMITS.value):
   return parsed.success ? parsed.data : undefined;
 }
 
-export function boundedRecordFields(value: Json | undefined): RecordField[] {
+function toneOf(value: Json | undefined): RecordProps["statusTone"] {
+  const parsed = TONE.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function boundedRecordFields(value: Json | undefined): RecordProps["fields"] {
   if (!Array.isArray(value)) return [];
-  const fields: RecordField[] = [];
+  const fields: Array<RecordProps["fields"][number]> = [];
   for (const entry of value.slice(0, UI_LIMITS.recordRows)) {
     const object = asObject(entry);
     if (!object) continue;
@@ -75,9 +93,9 @@ export function boundedRecordFields(value: Json | undefined): RecordField[] {
   return fields;
 }
 
-export function boundedMetrics(value: Json | undefined): Metric[] {
+export function boundedMetrics(value: Json | undefined): MetricsProps["metrics"] {
   if (!Array.isArray(value)) return [];
-  const metrics: Metric[] = [];
+  const metrics: Array<MetricsProps["metrics"][number]> = [];
   for (const entry of value.slice(0, UI_LIMITS.metricsRows)) {
     const object = asObject(entry);
     if (!object) continue;
@@ -88,16 +106,16 @@ export function boundedMetrics(value: Json | undefined): Metric[] {
         label,
         value: metricValue,
         change: stringOf(object.change, UI_LIMITS.subtitle),
-        changeTone: stringOf(object.changeTone, UI_LIMITS.label),
+        changeTone: toneOf(object.changeTone),
       });
     }
   }
   return metrics;
 }
 
-export function boundedChecklistItems(value: Json | undefined): ChecklistItem[] {
+export function boundedChecklistItems(value: Json | undefined): ChecklistProps["items"] {
   if (!Array.isArray(value)) return [];
-  const items: ChecklistItem[] = [];
+  const items: Array<ChecklistProps["items"][number]> = [];
   for (const entry of value.slice(0, UI_LIMITS.checklistRows)) {
     const object = asObject(entry);
     if (!object) continue;
@@ -119,37 +137,56 @@ function InvalidArguments({ name }: { name: string }) {
   );
 }
 
+function componentVersionKey(version: ComponentVersion): string {
+  return `${version.componentId}@${version.viewVersion}`;
+}
+
+const SHARED_RENDERER_REGISTRY = {
+  [componentVersionKey(openMausRecordBinding)]: ({ call, readOnly }: RendererProps) => {
+    const parsed = openMausRecordBinding.viewSchema.safeParse({
+      title: stringOf(call.arguments.title, UI_LIMITS.title),
+      subtitle: stringOf(call.arguments.subtitle, UI_LIMITS.subtitle),
+      status: stringOf(call.arguments.status, UI_LIMITS.label),
+      statusTone: toneOf(call.arguments.statusTone),
+      fields: boundedRecordFields(call.arguments.fields),
+    });
+    return parsed.success
+      ? <SharedRecord {...parsed.data} mode={readOnly ? "preview" : "live"} />
+      : <InvalidArguments name="Record" />;
+  },
+  [componentVersionKey(openMausMetricsBinding)]: ({ call, readOnly }: RendererProps) => {
+    const parsed = openMausMetricsBinding.viewSchema.safeParse({
+      title: stringOf(call.arguments.title, UI_LIMITS.title),
+      caption: stringOf(call.arguments.caption, UI_LIMITS.subtitle),
+      metrics: boundedMetrics(call.arguments.metrics),
+    });
+    return parsed.success
+      ? <SharedMetrics {...parsed.data} mode={readOnly ? "preview" : "live"} />
+      : <InvalidArguments name="Figures" />;
+  },
+  [componentVersionKey(openMausChecklistBinding)]: ({ call, readOnly }: RendererProps) => {
+    const parsed = openMausChecklistBinding.viewSchema.safeParse({
+      title: stringOf(call.arguments.title, UI_LIMITS.title),
+      caption: stringOf(call.arguments.caption, UI_LIMITS.subtitle),
+      items: boundedChecklistItems(call.arguments.items),
+    });
+    return parsed.success
+      ? <SharedChecklist {...parsed.data} mode={readOnly ? "preview" : "live"} />
+      : <InvalidArguments name="Checklist" />;
+  },
+  [componentVersionKey(openMausQuoteBinding)]: ({ call, readOnly }: RendererProps) => {
+    const parsed = openMausQuoteBinding.viewSchema.safeParse({
+      quote: stringOf(call.arguments.quote),
+      attribution: stringOf(call.arguments.attribution, UI_LIMITS.subtitle),
+      context: stringOf(call.arguments.context, UI_LIMITS.subtitle),
+    });
+    return parsed.success
+      ? <SharedQuote {...parsed.data} mode={readOnly ? "preview" : "live"} />
+      : <InvalidArguments name="Quotation" />;
+  },
+} satisfies Record<string, Renderer>;
+
 const RENDERER_REGISTRY = {
-  show_record_card: ({ call }: RendererProps) => (
-    <RecordCard
-      title={stringOf(call.arguments.title, UI_LIMITS.title)}
-      subtitle={stringOf(call.arguments.subtitle, UI_LIMITS.subtitle)}
-      status={stringOf(call.arguments.status, UI_LIMITS.label)}
-      statusTone={stringOf(call.arguments.statusTone, UI_LIMITS.label)}
-      fields={boundedRecordFields(call.arguments.fields)}
-    />
-  ),
-  show_metrics_card: ({ call }: RendererProps) => (
-    <MetricsCard
-      title={stringOf(call.arguments.title, UI_LIMITS.title)}
-      caption={stringOf(call.arguments.caption, UI_LIMITS.subtitle)}
-      metrics={boundedMetrics(call.arguments.metrics)}
-    />
-  ),
-  show_checklist: ({ call }: RendererProps) => (
-    <ChecklistCard
-      title={stringOf(call.arguments.title, UI_LIMITS.title)}
-      caption={stringOf(call.arguments.caption, UI_LIMITS.subtitle)}
-      items={boundedChecklistItems(call.arguments.items)}
-    />
-  ),
-  show_quote: ({ call }: RendererProps) => (
-    <QuoteCard
-      quote={stringOf(call.arguments.quote)}
-      attribution={stringOf(call.arguments.attribution, UI_LIMITS.subtitle)}
-      context={stringOf(call.arguments.context, UI_LIMITS.subtitle)}
-    />
-  ),
   show_todoist_tasks: ({ call, threadId, readOnly }: RendererProps) => (
     <TodoistTasks call={call} readOnly={readOnly} threadId={threadId} />
   ),
@@ -183,10 +220,38 @@ const RENDERER_REGISTRY = {
   },
 } satisfies Record<string, Renderer>;
 
-export const RENDERER_NAMES: ReadonlySet<string> = new Set(Object.keys(RENDERER_REGISTRY));
+const SHARED_BINDINGS = [
+  openMausRecordBinding,
+  openMausMetricsBinding,
+  openMausChecklistBinding,
+  openMausQuoteBinding,
+] as const;
+
+export const RENDERER_NAMES: ReadonlySet<string> = new Set([
+  ...SHARED_BINDINGS.map((binding) => binding.toolName),
+  ...Object.keys(RENDERER_REGISTRY),
+]);
+const SHARED_RENDERER_BY_VERSION: ReadonlyMap<string, Renderer> = new Map(Object.entries(SHARED_RENDERER_REGISTRY));
 const RENDERER_BY_NAME: ReadonlyMap<string, Renderer> = new Map(Object.entries(RENDERER_REGISTRY));
 
+function storedComponentVersion(call: ComponentCall): ComponentVersion | undefined {
+  if (call.componentId !== undefined && call.viewVersion !== undefined) {
+    return { componentId: call.componentId, viewVersion: call.viewVersion };
+  }
+  return componentVersionForToolName(call.name);
+}
+
 function GalleryBody({ call, threadId, readOnly }: RendererProps) {
+  const version = storedComponentVersion(call);
+  if (version) {
+    const SharedRenderer = SHARED_RENDERER_BY_VERSION.get(componentVersionKey(version));
+    if (SharedRenderer) return <SharedRenderer call={call} readOnly={readOnly} threadId={threadId} />;
+    return (
+      <UiFrame title={call.name}>
+        <p className="text-[13px] text-danger" role="alert">This stored component version is not supported by this build.</p>
+      </UiFrame>
+    );
+  }
   const RendererComponent = RENDERER_BY_NAME.get(call.name);
   if (RendererComponent) return <RendererComponent call={call} readOnly={readOnly} threadId={threadId} />;
   const fallback = componentFallback(call.name, "This build does not know how to draw that component.");

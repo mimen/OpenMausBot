@@ -76,9 +76,13 @@ export async function showComponent(input: ShowInput, ctx: ShowContext): Promise
     storedArgs = resolved.value;
   }
 
+  const version = spec.componentId !== undefined && spec.viewVersion !== undefined
+    ? { componentId: spec.componentId, viewVersion: spec.viewVersion }
+    : {};
   const call: ComponentCall = {
     callId: newId(),
     name: spec.name,
+    ...version,
     arguments: storedArgs,
     result: boundedResult(result),
     status,
