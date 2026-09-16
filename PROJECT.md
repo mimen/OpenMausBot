@@ -24,17 +24,17 @@ are different repositories and this record supersedes that framing.
 Nine, not the four an earlier inventory recorded. Two exist only in the fork, and one
 of those two exists only as uncommitted files.
 
-| Component | Path | What it is |
-|---|---|---|
-| React chat app | `src/` | Vite, React 19, Tailwind 4 renderer. No client transports; sends HTTP, folds one SSE stream. |
-| Harness server | `server/` | Plain-Node HTTP and SSE on `127.0.0.1:8799`, owns every agent process. Webhook receiver on `:8800`. No framework, by policy. |
-| Electron desktop shell | `electron/` | macOS, Windows, Ubuntu shells embedding the harness server. The signed download. |
-| Companion sidecar | `companion/` | Node proxy on `:8810` fronting the loopback harness so a phone can reach it without the harness leaving `127.0.0.1`. |
-| iOS companion app | `ios/` | Dependency-free SwiftUI client for the same harness, reached through the sidecar. |
-| Cloudflare Composio broker | `cloudflare/composio-broker/` | Worker keeping the shared Composio key out of desktop builds; mints per-install sessions. |
-| oxlint anti-slop plugin | `tools/oxlint/anti-slop/` | 16 custom lint rules encoding type-system discipline as lints instead of prose. |
-| Generative UI component pack | `server/ui/`, `src/components/ui/` | Fork only (`origin/main`). Structured components an agent emits and the chat renders natively instead of markdown. |
-| Local deployment system | `scripts/deployment/`, `DEPLOY.md` | Fork only, uncommitted. Installs and verifies a signed local production build at `/Applications/OpenMausBot.app`. |
+| Component | Path | What it is | Surfaces |
+|---|---|---|---|
+| React chat app | `src/` | Vite, React 19, Tailwind 4 renderer. No client transports; sends HTTP, folds one SSE stream. | web |
+| Harness server | `server/` | Plain-Node HTTP and SSE on `127.0.0.1:8799`, owns every agent process. Webhook receiver on `:8800`. No framework, by policy. | api, resident |
+| Electron desktop shell | `electron/` | macOS, Windows, Ubuntu shells embedding the harness server. The signed download. | desktop |
+| Companion sidecar | `companion/` | Node proxy on `:8810` fronting the loopback harness so a phone can reach it without the harness leaving `127.0.0.1`. | resident, api |
+| iOS companion app | `ios/` | Dependency-free SwiftUI client for the same harness, reached through the sidecar. | mobile |
+| Cloudflare Composio broker | `cloudflare/composio-broker/` | Worker keeping the shared Composio key out of desktop builds; mints per-install sessions. | api, backend-data |
+| oxlint anti-slop plugin | `tools/oxlint/anti-slop/` | 16 custom lint rules encoding type-system discipline as lints instead of prose. | library |
+| Generative UI component pack | `server/ui/`, `src/components/ui/` | Fork only (`origin/main`). Structured components an agent emits and the chat renders natively instead of markdown. | library |
+| Local deployment system | `scripts/deployment/`, `DEPLOY.md` | Fork only, uncommitted. Installs and verifies a signed local production build at `/Applications/OpenMausBot.app`. | cli-tui |
 
 ## How they relate
 
