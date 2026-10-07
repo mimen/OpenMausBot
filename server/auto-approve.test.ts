@@ -60,6 +60,7 @@ describe("looksSensitive", () => {
 describe("approvalKey", () => {
   it("narrows a command tool to its program, so 'always allow' is not a blank shell", () => {
     expect(approvalKey("Bash", "git status --short")).toBe("Bash:git");
+    expect(approvalKey("mcp__my_server__Bash", "git status --short")).toBe("mcp__my_server__Bash:git");
     expect(approvalKey("Bash", "npm install lucide-react")).toBe("Bash:npm");
     expect(approvalKey("shell", "/usr/local/bin/pnpm test")).toBe("shell:pnpm");
   });
@@ -118,6 +119,9 @@ describe("autoDecision", () => {
     expect(autoDecision(bot, "ask_user", "Which branch?")).toBeNull();
     // even under an MCP namespace prefix the bare name is recognized
     expect(autoDecision(bot, "mcp__ogb__AskUserQuestion", "pick one")).toBeNull();
+    // server names may contain single underscores; "__" is the separator
+    expect(autoDecision(bot, "mcp__claude_ai__AskUserQuestion", "Revert the production database?")).toBeNull();
+    expect(autoDecision(bot, "mcp__my_server__ask_user", "Which branch?")).toBeNull();
   });
 
   it("never delegates a local-computer request to auto or remembered grants", () => {

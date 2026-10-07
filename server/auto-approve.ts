@@ -38,8 +38,15 @@ const SENSITIVE = [
 // exists to prevent is exactly a machine answering for its person.
 const QUESTION_TOOLS = new Set(["askuserquestion", "ask_user", "ask"]);
 
+// mcp__<server>__<tool>. Server names may contain "_", so "__" is the separator.
+function bareToolName(tool: string): string {
+  const parts = tool.split("__");
+  if (parts.length >= 3 && parts[0].toLowerCase() === "mcp") return parts.slice(2).join("__");
+  return tool;
+}
+
 function isQuestionTool(tool: string): boolean {
-  return QUESTION_TOOLS.has(tool.replace(/^mcp__[^_]+__/, "").toLowerCase());
+  return QUESTION_TOOLS.has(bareToolName(tool).toLowerCase());
 }
 
 /** First matching pattern's source, so a verdict can NAME the rule that
@@ -71,7 +78,7 @@ export function looksDestructive(text: string): boolean {
 const COMMAND_TOOLS = new Set(["bash", "shell", "execute", "run_command", "computer_exec", "terminal"]);
 
 export function approvalKey(tool: string, summary: string, scope?: "local-computer"): string {
-  const bare = tool.replace(/^mcp__[^_]+__/, "").toLowerCase();
+  const bare = bareToolName(tool).toLowerCase();
   if (!COMMAND_TOOLS.has(bare)) return scope ? `${scope}:${tool}` : tool;
   // first bare word of the command, skipping env assignments and sudo
   const words = summary.trim().split(/\s+/);
