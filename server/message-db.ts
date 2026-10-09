@@ -38,6 +38,8 @@ function open(): DatabaseSync {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec("PRAGMA busy_timeout = 5000");
+  // SQLite's lower() folds ASCII only; search lowercases its needle in JS
+  db.function("js_lower", { deterministic: true }, (value) => (value === null ? null : String(value).toLowerCase()));
   db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
       thread_id TEXT NOT NULL,
@@ -288,8 +290,8 @@ export function searchMessages(query: string, limit = 40): SearchHit[] {
   const rows = db()
     .prepare(
       "SELECT thread_id, id, at, role, kind, text, json_extract(json, '$.tool.name') AS tool_name, json_extract(json, '$.from.name') AS from_name FROM messages " +
-        "WHERE (kind = 'text' AND text IS NOT NULL AND lower(text) LIKE ? ESCAPE '\\') " +
-        "   OR (kind = 'activity' AND tool_name IS NOT NULL AND lower(tool_name) LIKE ? ESCAPE '\\') " +
+        "WHERE (kind = 'text' AND text IS NOT NULL AND js_lower(text) LIKE ? ESCAPE '\\') " +
+        "   OR (kind = 'activity' AND tool_name IS NOT NULL AND js_lower(tool_name) LIKE ? ESCAPE '\\') " +
         "ORDER BY at DESC LIMIT ?",
     )
     .all(pattern, pattern, limit) as Array<{

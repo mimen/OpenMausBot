@@ -119,6 +119,15 @@ describe("message-db", () => {
     expect(searchMessages("")).toEqual([]);
   });
 
+  it("search folds non-ASCII case the same way on both sides", () => {
+    insertMessage("t9", msg("m1", "Meeting with Émile in Zürich"));
+    insertMessage("t9", { ...msg("m2", "chip"), kind: "activity", tool: { name: "Überprüfen", ok: true } });
+
+    expect(searchMessages("Émile")).toMatchObject([{ messageId: "m1" }]);
+    expect(searchMessages("zürich")).toMatchObject([{ messageId: "m1" }]);
+    expect(searchMessages("überprüfen")).toMatchObject([{ messageId: "m2" }]);
+  });
+
   it("search reports the match offset for highlighting, and finds activity chips by tool name", () => {
     insertMessage("t7", msg("m1", "please\n\n   run   the migration now"));
     insertMessage("t7", { ...msg("m2", ""), kind: "activity", role: "bot", tool: { name: "Bash: alembic upgrade head", ok: true } } as Message);
