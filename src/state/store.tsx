@@ -325,6 +325,8 @@ export interface AppState {
   config: ConfigStatus | null;
   /** selected chat — a bot id OR a group id */
   selectedId: string;
+  /** bumps on every select, so re-picking the current chat is observable */
+  selectCount: number;
   activeView: "chat" | "routines";
   routines: Routine[];
   routineRuns: RoutineRun[];
@@ -587,11 +589,16 @@ export function reducer(state: AppState, action: Action): AppState {
           ...state,
           activeView: "chat",
           selectedId: action.id,
+          selectCount: state.selectCount + 1,
           groups: state.groups.map((g) => (g.id === action.id ? { ...g, unread: false } : g)),
         };
       }
       return updateBot(
-        withMascotMotion({ ...state, activeView: "chat", selectedId: action.id }, action.id, "switch"),
+        withMascotMotion(
+          { ...state, activeView: "chat", selectedId: action.id, selectCount: state.selectCount + 1 },
+          action.id,
+          "switch",
+        ),
         action.id,
         (b) => ({ ...b, unread: false }),
       );
@@ -933,6 +940,7 @@ export const initialState: AppState = {
   instances: [],
   config: null,
   selectedId: "",
+  selectCount: 0,
   activeView: "chat",
   routines: [],
   routineRuns: [],

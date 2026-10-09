@@ -62,3 +62,25 @@ describe("cross-client bot creation", () => {
     expect(greeted.bots[0]?.messages).toEqual([greeting]);
   });
 });
+
+describe("select", () => {
+  it("records a re-pick of the chat that is already selected", () => {
+    const bot = {
+      id: "b1",
+      threadId: "t1",
+      name: "Scout",
+      title: "",
+      description: "",
+      notifications: true,
+      color: "green",
+      unread: false,
+      modelSelection: { instanceId: "codex", model: "default" },
+    } satisfies Omit<Bot, "messages">;
+    const first = reducer(reducer(initialState, { type: "botPatched", bot }), { type: "select", id: "b1" });
+    const again = reducer(first, { type: "select", id: "b1" });
+
+    expect(again.selectedId).toBe(first.selectedId);
+    expect(again.activeView).toBe(first.activeView);
+    expect(again.selectCount).toBe(first.selectCount + 1);
+  });
+});

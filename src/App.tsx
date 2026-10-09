@@ -68,14 +68,14 @@ function Shell() {
   }, [state.bots, state.selectedId, dispatch]);
 
   // Picking a conversation closes the drawer: on a phone the chat is what you
-  // asked for, and leaving the list up would hide it. Watching activeView too
-  // catches re-selecting the bot that is already current from another view —
-  // the reducer switches the view without changing selectedId. pluginsOpen
+  // asked for, and leaving the list up would hide it. selectCount also catches
+  // re-picking the chat that is already current, which changes neither
+  // selectedId nor activeView. pluginsOpen
   // and settingsOpen cover the same idea from a different trigger: close the
   // drawer whenever an action opens something over the chat.
   useEffect(() => {
     setDrawerOpen(false);
-  }, [state.selectedId, state.activeView, state.pluginsOpen, state.settingsOpen]);
+  }, [state.selectedId, state.selectCount, state.activeView, state.pluginsOpen, state.settingsOpen]);
 
   return (
     <div className="flex h-full flex-col">
