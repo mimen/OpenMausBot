@@ -184,8 +184,11 @@ describe("action follow-up restart recovery", () => {
 
     await startServer();
     await until(() => followUpRow("restart-live-claim")?.status === "dispatched", "restored live claim did not dispatch");
-    const restartedBot = await firstBot();
-    expect(restartedBot.messages.some((message) => message.text?.includes("1 trusted UI action"))).toBe(true);
+    // the status flips when the turn is sent; the echoed reply streams in after
+    await until(
+      async () => (await firstBot()).messages.some((message) => message.text?.includes("1 trusted UI action")),
+      "restored live claim reached no bot reply",
+    );
 
     const group = GroupSchema.parse(await api("POST", "/api/groups", {
       name: "Failed follow-up room",
