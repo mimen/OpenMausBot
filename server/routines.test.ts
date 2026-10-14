@@ -274,4 +274,41 @@ describe("RoutineManager", () => {
     expect(h.manager.listRuns()[0]).toMatchObject({ status: "missed" });
     expect(h.started).toHaveLength(0);
   });
+
+  it("drops finished receipts before a queued run once history is past the cap", async () => {
+    const h = harness();
+    const routine = h.manager.create({
+      name: "Done",
+      prompt: "finish",
+      botId: "maus-1",
+      schedule: { type: "once", at: new Date(2026, 7, 17, 8, 1).getTime() },
+    });
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    const finishedId = h.manager.listRuns()[0]!.id;
+    h.manager.handleRuntimeEvent({
+      eventId: "done",
+      provider: "fake",
+      threadId: "thread-1",
+      createdAt: "2026-08-17T15:01:00.000Z",
+      type: "turn.completed",
+      ok: true,
+    });
+    h.setBot("busy");
+    const live = h.manager.runNow(routine.id)!;
+    for (let i = 0; i < 2000; i++) {
+      h.manager.enqueueWebhook({
+        webhookId: "wh-cap",
+        webhookName: "hook",
+        prompt: "ping",
+        botId: "maus-1",
+        runOn: "maus",
+        deliveryId: `d-${i}`,
+        receivedAt: i,
+      });
+    }
+    const runs = h.manager.listRuns();
+    expect(runs.some((run) => run.id === live.id)).toBe(true);
+    expect(runs.some((run) => run.id === finishedId)).toBe(false);
+  }, 60_000);
 });

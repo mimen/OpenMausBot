@@ -349,7 +349,7 @@ export class RoutineManager {
       createdAt: this.now(),
     };
     this.runs.push(run);
-    if (this.runs.length > MAX_RUNS) this.runs.splice(0, this.runs.length - MAX_RUNS);
+    this.trimRuns();
     this.save();
     this.emitRun(run);
     queueMicrotask(() => void this.tick());
@@ -548,8 +548,24 @@ export class RoutineManager {
       createdAt: this.now(),
     };
     this.runs.push(run);
-    if (this.runs.length > MAX_RUNS) this.runs.splice(0, this.runs.length - MAX_RUNS);
+    this.trimRuns();
     return run;
+  }
+
+  // ponytail: live rows can leave the file over MAX_RUNS. Drop oldest finished receipts only; cap in-flight rows if a flood keeps thousands queued.
+  private trimRuns(): void {
+    const overflow = this.runs.length - MAX_RUNS;
+    if (overflow <= 0) return;
+    const live = new Set<RoutineRunStatus>(["queued", "running", "waiting"]);
+    let dropped = 0;
+    for (let i = 0; i < this.runs.length && dropped < overflow; ) {
+      if (live.has(this.runs[i]!.status)) {
+        i += 1;
+        continue;
+      }
+      this.runs.splice(i, 1);
+      dropped += 1;
+    }
   }
 
   private emitRoutine(routine: Routine) {
