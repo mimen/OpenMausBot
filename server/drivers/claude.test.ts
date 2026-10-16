@@ -452,14 +452,25 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((e) => e.type === "turn.completed");
   });
 
-  it("interrupt kills the turn and settles it as failed, not hung", async () => {
+  it("interrupt kills the turn and settles it as interrupted without an error", async () => {
     await create("hang");
     await instance.adapter.sendTurn({ threadId: "t-int", text: "go" });
     await recorder.until((e) => e.type === "session.started");
 
     await instance.adapter.interruptTurn("t-int");
     const done = await recorder.until((e) => e.type === "turn.completed");
-    expect(done).toMatchObject({ ok: false, stopReason: "exit_before_result" });
+    expect(done).toMatchObject({ ok: false, stopReason: "interrupted" });
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
+  });
+
+  it("a failed result surfaces its error text", async () => {
+    await create("error-result");
+    await instance.adapter.sendTurn({ threadId: "t-err", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+
+    expect(done).toMatchObject({ ok: false });
+    const error = recorder.events.find((e) => e.type === "runtime.error")!;
+    expect(error.message).toContain("API Error: 529 overloaded");
   });
 
   it("an exit before result becomes runtime.error + failed turn", async () => {

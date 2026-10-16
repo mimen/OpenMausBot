@@ -5,6 +5,7 @@
 // the real thing misbehaves:
 //
 //   FAKE_CLAUDE_MODE   happy (default) | exit-early | hang | malformed
+//                      | error-result (a failed result with error text, no reply)
 //                      | stream (partial-message text deltas before the
 //                        whole-message frame, plus subagent noise to drop)
 //   FAKE_CLAUDE_DUMP   path to write {argv, env, prompt, mcpConfig} as JSON,
@@ -104,6 +105,11 @@ process.stdin.on("end", () => {
     // permission broker while a turn is officially in flight
     setInterval(() => {}, 1_000);
     return;
+  }
+
+  if (mode === "error-result") {
+    out({ type: "result", is_error: true, subtype: "error_during_execution", result: "API Error: 529 overloaded" });
+    process.exit(1);
   }
 
   if (mode === "malformed") {

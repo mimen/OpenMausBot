@@ -519,6 +519,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
 
       let settled = false;
+      // set by stop(): a user interrupt kills the CLI before it can write a
+      // result, and that is the requested outcome, not a crash to report
+      let interrupted = false;
       const settle = (
         ok: boolean,
         stopReason: string | null,
@@ -542,6 +545,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // text deltas for the current assistant message, so the whole-message
       // frame that follows doesn't re-emit the same text as one big delta
       let sawStreamDelta = false;
+      // an API error arrives as an assistant message and again as the failed
+      // result's text; remembering the last one keeps it from showing twice
+      let lastAssistantText = "";
 
       const handleLine = (line: string) => {
         let o: any;
@@ -578,6 +584,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             const msg = o.message ?? {};
             const text = firstText(msg.content);
             if (text.trim()) {
+              lastAssistantText = text.trim();
               // fallback delta for CLIs/paths that never streamed the block
               if (!sawStreamDelta) {
                 emit({ ...base(threadId, turnId), type: "content.delta", streamKind: "assistant_text", delta: text });
@@ -624,6 +631,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             }
             break;
           case "result":
+            if (o.is_error === true) {
+              const detail = String(o.result ?? "").trim() || o.subtype;
+              if (detail !== lastAssistantText) {
+                emit({ ...base(threadId, turnId), type: "runtime.error", message: `claude: ${detail ?? "turn failed"}` });
+              }
+            }
             // result.usage is this invocation's total — one process per turn,
             // so it is the turn's figure. cache reads count as input: they
             // are billed (at the cache rate) and they fill the window.
@@ -668,7 +681,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       });
 
       child.on("close", (code) => {
-        if (!settled) {
+        if (!settled && interrupted) {
+          settle(false, "interrupted");
+        } else if (!settled) {
           emit({
             ...base(threadId, turnId),
             type: "runtime.error",
@@ -678,7 +693,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
       });
 
-      const stop = () => killCliTree(child);
+      const stop = () => {
+        interrupted = true;
+        killCliTree(child);
+      };
       active.set(threadId, { stop, turnId, broker });
       emit({ ...base(threadId, turnId), type: "turn.started" });
 
