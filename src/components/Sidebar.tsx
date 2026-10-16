@@ -34,6 +34,7 @@ import { stateForBot } from "@/lib/mascot";
 import { useUpdaterState } from "@/lib/updater";
 import { cn } from "@/lib/cn";
 import { downloadAllBots } from "@/lib/team-files";
+import { previewText } from "@/lib/preview-text";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { MIN_QUERY, SearchResults } from "./SearchResults";
 import { TeamLibraryPanel, type TeamImportResult } from "./TeamLibraryPanel";
@@ -139,7 +140,7 @@ function preview(bot: Bot): string {
   if (last.kind === "options" && last.card) return last.card.title;
   if (last.kind === "activity" && last.tool) return last.tool.name;
   if (last.kind === "screen") return "Screen frame";
-  return last.text ?? "";
+  return previewText(last.text ?? "");
 }
 
 interface MenuState {
@@ -154,7 +155,7 @@ function groupPreview(group: Group, bots: Bot[]): string {
   }
   const last = group.messages.at(-1);
   if (!last) return "No messages yet";
-  const text = last.kind === "activity" && last.tool ? last.tool.name : (last.text ?? "");
+  const text = last.kind === "activity" && last.tool ? last.tool.name : previewText(last.text ?? "");
   if (last.role === "user") return `You: ${text}`;
   return last.from ? `${last.from.name}: ${text}` : text;
 }
