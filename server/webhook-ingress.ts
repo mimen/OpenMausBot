@@ -26,7 +26,7 @@ function json(res: ServerResponse, status: number, body: JsonValue): void {
 
 function readRawBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
-    let raw = "";
+    const chunks: Buffer[] = [];
     let bytes = 0;
     let done = false;
     const fail = (status: number, message: string) => {
@@ -36,14 +36,16 @@ function readRawBody(req: IncomingMessage): Promise<string> {
     };
     req.on("data", (chunk) => {
       if (done) return;
-      bytes += Buffer.byteLength(chunk);
+      bytes += chunk.length;
       if (bytes > MAX_WEBHOOK_BODY_BYTES) return fail(413, "Webhook body is too large");
-      raw += chunk;
+      // Buffers, not a string: per-chunk toString() splits any UTF-8
+      // sequence that straddles a TCP chunk boundary into U+FFFD.
+      chunks.push(chunk);
     });
     req.on("end", () => {
       if (done) return;
       done = true;
-      resolve(raw);
+      resolve(Buffer.concat(chunks).toString("utf8"));
     });
     req.on("error", () => fail(400, "Could not read webhook body"));
   });
