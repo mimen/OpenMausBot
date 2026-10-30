@@ -3,12 +3,13 @@
 // folds one SSE event stream; every provider process runs here.
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync, unlinkSync } from "node:fs";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type ServerResponse } from "node:http";
 import { extname, join } from "node:path";
 
 import { z } from "zod";
 
 import { approvalKey, autoVerdict } from "./auto-approve.ts";
+import { readBody } from "./read-body.ts";
 import { appendDecision, readDecisions } from "./decision-log.ts";
 import { validateBotCwd } from "./bot-cwd.ts";
 import { extensionForMime, IMAGE_MAX_BYTES, readAttachment, saveImage, type SavedAttachment } from "./attachments.ts";
@@ -2509,43 +2510,6 @@ function json(res: ServerResponse, status: number, body: unknown) {
   const data = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(data);
-}
-
-function readBody(req: IncomingMessage): Promise<any> {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    let bytes = 0;
-    let done = false;
-    const fail = (status: number, msg: string) => {
-      if (done) return;
-      done = true;
-      const err = Object.assign(new Error(msg), { status });
-      reject(err);
-    };
-    req.on("data", (c) => {
-      if (done) return;
-      bytes += typeof c === "string" ? Buffer.byteLength(c) : c.length;
-      if (bytes > 1_000_000) {
-        // Keep draining the socket, but stop retaining attacker-controlled
-        // bytes. Destroying the request here prevents the caller from
-        // receiving the useful 413 response.
-        return fail(413, "body too large");
-      }
-      data += c;
-    });
-    req.on("end", () => {
-      if (done) return;
-      let body: any;
-      try {
-        body = data ? JSON.parse(data) : {};
-      } catch {
-        return fail(400, "invalid JSON body");
-      }
-      done = true;
-      resolve(body);
-    });
-    req.on("error", (e) => fail(400, e instanceof Error ? e.message : String(e)));
-  });
 }
 
 // Loopback-only enforcement: the harness runs on 127.0.0.1 but accepts
