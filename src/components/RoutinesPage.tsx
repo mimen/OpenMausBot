@@ -178,7 +178,44 @@ function projectedItems(routines: Routine[], runs: RoutineRun[], from: number, t
   return items.sort((a, b) => a.at - b.at);
 }
 
-function RoutineCard({ item, bot, compact, onOpen }: { item: CalendarItem; bot: Bot; compact: boolean; onOpen: () => void }) {
+function cardTop(item: Pick<CalendarItem, "at">) {
+  const date = new Date(item.at);
+  return ((date.getHours() * 60 + date.getMinutes()) / 60) * HOUR_HEIGHT;
+}
+
+function cardHeight(item: Pick<CalendarItem, "routine" | "run">) {
+  if (item.run?.triggerSource === "webhook") return 48;
+  return Math.max(48, ((item.routine?.durationMinutes ?? item.run?.durationMinutes ?? 30) / 60) * HOUR_HEIGHT);
+}
+
+// Cards whose blocks overlap share the column side by side, so a later card is never hidden under an earlier one.
+// Expects items sorted by time, as projectedItems returns them.
+export function cardLanes(items: Pick<CalendarItem, "id" | "at" | "routine" | "run">[]) {
+  const lanes = new Map<string, { lane: number; lanes: number }>();
+  let cluster: string[] = [];
+  let ends: number[] = [];
+  let clusterEnd = -Infinity;
+  const close = () => cluster.forEach((id) => (lanes.get(id)!.lanes = ends.length));
+  for (const item of items) {
+    const top = cardTop(item);
+    const bottom = top + cardHeight(item);
+    if (top >= clusterEnd) {
+      close();
+      cluster = [];
+      ends = [];
+    }
+    let lane = ends.findIndex((end) => end <= top);
+    if (lane < 0) lane = ends.push(bottom) - 1;
+    else ends[lane] = bottom;
+    lanes.set(item.id, { lane, lanes: 0 });
+    cluster.push(item.id);
+    clusterEnd = Math.max(clusterEnd, bottom);
+  }
+  close();
+  return lanes;
+}
+
+function RoutineCard({ item, bot, compact, lane, onOpen }: { item: CalendarItem; bot: Bot; compact: boolean; lane: { lane: number; lanes: number }; onOpen: () => void }) {
   const status = item.run?.status;
   const color = MAUS_COLORS[bot.color];
   const title = item.routine?.name ?? item.run?.routineName ?? "Routine";
@@ -187,16 +224,16 @@ function RoutineCard({ item, bot, compact, onOpen }: { item: CalendarItem; bot: 
     <button
       onClick={onOpen}
       className={cn(
-        "group absolute left-1.5 right-1.5 z-10 overflow-hidden rounded-xl border py-1.5 text-left shadow-lg shadow-black/15 transition hover:z-20 hover:-translate-y-0.5 hover:brightness-110",
+        "group absolute z-10 overflow-hidden rounded-xl border py-1.5 text-left shadow-lg shadow-black/15 transition hover:z-20 hover:-translate-y-0.5 hover:brightness-110",
         compact ? "px-1.5" : "px-2",
         status === "failed" || status === "missed" ? "border-danger/50" : "border-white/10",
         status === "cancelled" && "opacity-55",
       )}
       style={{
-        top: `${((new Date(item.at).getHours() * 60 + new Date(item.at).getMinutes()) / 60) * HOUR_HEIGHT}px`,
-        minHeight: item.run?.triggerSource === "webhook"
-          ? "48px"
-          : `${Math.max(48, ((item.routine?.durationMinutes ?? item.run?.durationMinutes ?? 30) / 60) * HOUR_HEIGHT)}px`,
+        top: `${cardTop(item)}px`,
+        minHeight: `${cardHeight(item)}px`,
+        left: `calc(${(lane.lane / lane.lanes) * 100}% + 6px)`,
+        width: `calc(${100 / lane.lanes}% - 12px)`,
         background: `linear-gradient(115deg, color-mix(in srgb, ${color} 48%, #181818), color-mix(in srgb, ${color} 20%, #111))`,
       }}
     >
@@ -276,6 +313,7 @@ function CalendarGrid({
         </div>
         {starts.map((start) => {
           const dayItems = items.filter((item) => startOfDay(item.at) === start);
+          const lanes = cardLanes(dayItems);
           const now = new Date();
           const nowTop = ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT;
           return (
@@ -291,7 +329,7 @@ function CalendarGrid({
               )}
               {dayItems.map((item) => {
                 const bot = bots.find((candidate) => candidate.id === (item.routine?.botId ?? item.run?.botId));
-                return bot ? <RoutineCard key={item.id} item={item} bot={bot} compact={days === 7} onOpen={() => onOpen(item)} /> : null;
+                return bot ? <RoutineCard key={item.id} item={item} bot={bot} compact={days === 7} lane={lanes.get(item.id)!} onOpen={() => onOpen(item)} /> : null;
               })}
             </div>
           );
@@ -307,12 +345,14 @@ export function RoutineEditor({
   lockedBotId,
   defaultRunOn,
   onClose,
+  onSaved,
 }: {
   routine?: Routine;
   bots: Bot[];
   lockedBotId?: string;
   defaultRunOn?: RoutineRunOn;
   onClose: () => void;
+  onSaved?: (routine: Routine) => void;
 }) {
   const { state, dispatch } = useStore();
   const [name, setName] = useState(routine?.name ?? "");
@@ -354,6 +394,7 @@ export function RoutineEditor({
         body: JSON.stringify(input),
       });
       dispatch({ type: "routinePatched", routine: response.routine });
+      onSaved?.(response.routine);
       onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -608,6 +649,11 @@ export function RoutinesPage() {
 
   const move = (direction: number) => setAnchor((current) => addDays(current, direction * viewDays));
   const goToday = () => setAnchor(viewDays === 7 ? startOfWeek(Date.now()) : startOfDay(Date.now()));
+  // A saved schedule whose next run falls outside the visible range would otherwise look like it vanished.
+  const showNextRun = (routine: Routine) => {
+    const at = routine.nextRunAt;
+    if (at !== null && (at < rangeStart || at >= rangeEnd)) setAnchor(viewDays === 7 ? startOfWeek(at) : startOfDay(at));
+  };
   const openItem = (item: CalendarItem) => {
     setSelected(item);
     if (item.run && ["failed", "missed"].includes(item.run.status) && !item.run.seenAt) {
@@ -678,7 +724,7 @@ export function RoutinesPage() {
         <CalendarGrid anchor={rangeStart} days={viewDays} items={items} bots={state.bots} onOpen={openItem} />
       )}
 
-      {editor && <RoutineEditor routine={editor === "new" ? undefined : editor} bots={visibleBots} onClose={() => setEditor(null)} />}
+      {editor && <RoutineEditor routine={editor === "new" ? undefined : editor} bots={visibleBots} onClose={() => setEditor(null)} onSaved={showNextRun} />}
       {liveSelected && selectedBot && <RoutineDetails item={liveSelected} bot={selectedBot} onClose={() => setSelected(null)} onEdit={(routine) => { setSelected(null); setEditor(routine); }} />}
       {pausedOpen && <PausedRoutines routines={paused} bots={state.bots} onClose={() => setPausedOpen(false)} onEdit={(routine) => { setPausedOpen(false); setEditor(routine); }} />}
     </main>
