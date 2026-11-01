@@ -439,7 +439,8 @@ export class RoutineManager {
       }
       if (changed) this.save();
 
-      for (const run of [...this.runs].reverse()) {
+      // Oldest first. A copy, because new runs and trimming can change this.runs while a start is awaited.
+      for (const run of this.runs.slice()) {
         if (run.status !== "queued") continue;
         const state = this.options.botState(run.botId);
         if (state === "busy") continue;

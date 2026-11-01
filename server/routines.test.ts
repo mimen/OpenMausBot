@@ -209,6 +209,36 @@ describe("RoutineManager", () => {
     expect(h.taskActivations).toEqual([true]);
   });
 
+  it("starts queued work oldest first once a busy bot frees up", async () => {
+    const h = harness();
+    h.setBot("busy");
+    for (const n of [1, 2, 3]) {
+      h.manager.enqueueWebhook({
+        webhookId: "hook-1",
+        webhookName: "Ticket",
+        prompt: `event ${n}`,
+        botId: "maus-1",
+        runOn: "maus",
+        deliveryId: `delivery-${n}`,
+        receivedAt: n,
+      });
+    }
+    await h.manager.tick();
+    expect(h.started).toEqual([]);
+
+    // Like the real startTurn, a started run makes the bot busy until it ends.
+    const start = h.options.startTurn;
+    h.options.startTurn = async (...args) => {
+      h.setBot("busy");
+      await start(...args);
+    };
+    for (let i = 0; i < 3; i++) {
+      h.setBot("ready");
+      await h.manager.tick();
+    }
+    expect(h.started.map((run) => run.prompt)).toEqual(["event 1", "event 2", "event 3"]);
+  });
+
   it("folds provider lifecycle events into the calendar receipt", async () => {
     const h = harness();
     const routine = h.manager.create({
