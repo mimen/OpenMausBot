@@ -144,7 +144,7 @@ function webhookPromptParts(prompt?: string) {
   return instructions && eventData ? { instructions, eventData } : null;
 }
 
-function projectedItems(routines: Routine[], runs: RoutineRun[], from: number, to: number): CalendarItem[] {
+export function projectedItems(routines: Routine[], runs: RoutineRun[], from: number, to: number): CalendarItem[] {
   const items: CalendarItem[] = runs
     .filter((run) => run.scheduledFor >= from && run.scheduledFor < to)
     .map((run) => ({
@@ -166,11 +166,13 @@ function projectedItems(routines: Routine[], runs: RoutineRun[], from: number, t
       }
       continue;
     }
+    // Earlier occurrences already have a receipt or will never run (paused, or the computer was off).
+    const firstRun = routine.nextRunAt ?? Infinity;
     for (let day = startOfDay(from); day < to; day = addDays(day, 1)) {
       const date = new Date(day);
       if (!routine.schedule.weekdays.includes(date.getDay())) continue;
       const at = atLocalTime(day, routine.schedule.time);
-      if (at >= from && at < to && at >= routine.createdAt && !hasReceipt(routine.id, at)) {
+      if (at >= from && at < to && at >= firstRun && !hasReceipt(routine.id, at)) {
         items.push({ id: `next-${routine.id}-${at}`, at, routine, run: null });
       }
     }
