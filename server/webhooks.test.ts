@@ -186,13 +186,13 @@ describe("WebhookManager", () => {
   it("deduplicates retries by delivery id, including after a restart", () => {
     const h = harness();
     const { webhook, secret } = create(h.manager);
-    const event = { payload: { id: 1 }, deliveryId: "same-event" };
+    const event = { payload: { id: 1 }, deliveryId: "same-event".repeat(30) };
     expect(h.manager.receive(webhook.endpointId, secret, event).duplicate).toBe(false);
 
     const reloaded = new WebhookManager(h.options);
     h.setPending(3);
     const retry = reloaded.receive(webhook.endpointId, secret, event);
-    expect(retry).toEqual({ runId: "run-1", deliveryId: "same-event", duplicate: true });
+    expect(retry).toEqual({ runId: "run-1", deliveryId: event.deliveryId, duplicate: true });
     expect(h.queued).toHaveLength(1);
     expect(reloaded.list()[0]?.deliveryCount).toBe(1);
   });

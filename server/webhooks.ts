@@ -492,7 +492,7 @@ export class WebhookManager {
 
     const allowed = trigger.eventTypes ?? [];
     if (allowed.length > 0 && (!event.eventName || !allowed.includes(event.eventName))) {
-      const deliveryId = String(event.deliveryId ?? "").trim().slice(0, 200) || randomUUID();
+      const deliveryId = String(event.deliveryId ?? "").trim() || randomUUID();
       this.appendAttempt(trigger, event, {
         outcome: "ignored",
         statusCode: 202,
@@ -504,7 +504,7 @@ export class WebhookManager {
     }
 
     const now = this.now();
-    const requestedDeliveryId = String(event.deliveryId ?? "").trim().slice(0, 200);
+    const requestedDeliveryId = String(event.deliveryId ?? "").trim();
     if (requestedDeliveryId) {
       const key = `${trigger.endpointId}:${requestedDeliveryId}`;
       const duplicate = this.deliveries.find((delivery) => delivery.key === key);
@@ -563,7 +563,7 @@ export class WebhookManager {
 
   private captureVerification(trigger: StoredWebhookTrigger, event: WebhookEvent): WebhookReceiveResult {
     const receivedAt = this.now();
-    const deliveryId = String(event.deliveryId ?? "").trim().slice(0, 200) || randomUUID();
+    const deliveryId = String(event.deliveryId ?? "").trim() || randomUUID();
     trigger.verificationPending = false;
     trigger.verifiedAt = receivedAt;
     trigger.lastReceivedAt = receivedAt;
@@ -611,7 +611,7 @@ export class WebhookManager {
     };
     if (event.eventName) attempt.eventName = event.eventName.slice(0, 200);
     if (event.payload !== undefined) attempt.preview = previewPayload(event.payload);
-    if (details.deliveryId) attempt.deliveryId = details.deliveryId.slice(0, 200);
+    if (details.deliveryId) attempt.deliveryId = details.deliveryId;
     if (details.runId) attempt.runId = details.runId;
     if (details.reason) attempt.reason = details.reason;
     this.attempts.push(attempt);

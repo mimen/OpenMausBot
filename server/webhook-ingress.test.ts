@@ -96,6 +96,31 @@ describe("webhook-only ingress", () => {
     expect(manager.list().find((webhook) => webhook.id === created.webhook.id)).toMatchObject({ verificationPending: false, enabled: false });
   });
 
+  it("does not merge delivery ids that differ after 200 characters", async () => {
+    const created = manager.create({ name: "Long delivery ids", prompt: "Review the event", botId: "maus-1" });
+    const credential = webhookCredential(ingress.baseUrl, created.webhook.endpointId, created.secret);
+    const before = queued.length;
+    const firstId = `${"x".repeat(200)}-first`;
+    const secondId = `${"x".repeat(200)}-second`;
+    const send = (id: string) => fetch(credential.url, {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": id },
+      body: JSON.stringify({ task: id }),
+    });
+
+    const first = await send(firstId);
+    expect(first.status).toBe(202);
+    const second = await send(secondId);
+    expect(second.status).toBe(202);
+    expect(await second.json()).toMatchObject({ duplicate: false, deliveryId: secondId });
+    const retry = await send(firstId);
+    expect(retry.status).toBe(202);
+    expect(await retry.json()).toMatchObject({ duplicate: true, deliveryId: firstId });
+    expect(queued.slice(before).map((run) => run.deliveryId)).toEqual([firstId, secondId]);
+    expect(manager.listAttempts().filter((attempt) => attempt.webhookId === created.webhook.id)
+      .map((attempt) => attempt.deliveryId)).toEqual([firstId, secondId, firstId]);
+  });
+
   it("rejects invalid credentials, malformed JSON and oversized bodies", async () => {
     const unauthorized = await fetch(`${ingress.baseUrl}/hooks/${endpointId}/wrong`, { method: "POST", body: "{}" });
     expect(unauthorized.status).toBe(401);
