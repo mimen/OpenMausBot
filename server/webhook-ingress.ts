@@ -95,6 +95,14 @@ function eventName(req: IncomingMessage): string | undefined {
   )?.trim() || undefined;
 }
 
+function decodePathSecret(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw Object.assign(new Error("Invalid webhook URL"), { status: 400 });
+  }
+}
+
 export function createWebhookIngressHandler(manager: WebhookManager) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -106,7 +114,7 @@ export function createWebhookIngressHandler(manager: WebhookManager) {
     if (req.method !== "POST") return json(res, 405, { error: "Webhooks accept POST requests" });
 
     try {
-      const pathSecret = match[2] ? decodeURIComponent(match[2]) : "";
+      const pathSecret = match[2] ? decodePathSecret(match[2]) : "";
       const secret = pathSecret || bearerSecret(req);
       // Reject bad capability URLs before buffering or parsing attacker input.
       if (!manager.authorize(match[1], secret)) {

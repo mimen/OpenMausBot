@@ -140,4 +140,15 @@ describe("webhook-only ingress", () => {
     expect(oversized.status).toBe(413);
     expect(manager.listAttempts().filter((attempt) => attempt.webhookId === manager.list().find((webhook) => webhook.endpointId === endpointId)?.id && attempt.outcome === "rejected").length).toBeGreaterThanOrEqual(3);
   });
+
+  it("records a malformed percent-encoded secret as a client rejection", async () => {
+    const webhookId = manager.list().find((webhook) => webhook.endpointId === endpointId)?.id;
+    const rejected = () => manager.listAttempts().filter((attempt) => attempt.webhookId === webhookId && attempt.outcome === "rejected");
+    const before = rejected().length;
+    const response = await fetch(`${ingress.baseUrl}/hooks/${endpointId}/%`, { method: "POST", body: "{}" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid webhook URL" });
+    expect(rejected()).toHaveLength(before + 1);
+    expect(rejected().at(-1)).toMatchObject({ statusCode: 400, reason: "Invalid webhook URL" });
+  });
 });
