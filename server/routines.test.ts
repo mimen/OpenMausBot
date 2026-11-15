@@ -305,6 +305,29 @@ describe("RoutineManager", () => {
     expect(h.started).toHaveLength(0);
   });
 
+  it("still runs a catch-up occurrence after an older slot is already stale", async () => {
+    const h = harness();
+    const routine = h.manager.create({
+      name: "Daily check",
+      prompt: "Check it",
+      botId: "maus-5",
+      schedule: { type: "daily", time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+    });
+    const first = routine.nextRunAt!;
+    const second = nextOccurrence(routine.schedule, first)!;
+    const third = nextOccurrence(routine.schedule, second)!;
+    // Two mornings later, an hour after the slot: the stored head is 49h late,
+    // the middle day is 25h late, and today's slot is 1h late.
+    h.setNow(first + 49 * 60 * 60_000);
+    await h.manager.tick();
+    const runs = h.manager.listRuns();
+    expect(runs.filter((run) => run.status === "missed").map((run) => run.scheduledFor)).toEqual([first]);
+    expect(runs.find((run) => run.scheduledFor === second)).toBeUndefined();
+    expect(runs.find((run) => run.scheduledFor === third)).toMatchObject({ status: "running" });
+    expect(h.started).toHaveLength(1);
+    expect(h.manager.listRoutines()[0]!.nextRunAt).toBe(nextOccurrence(routine.schedule, third));
+  });
+
   it("drops finished receipts before a queued run once history is past the cap", async () => {
     const h = harness();
     const routine = h.manager.create({

@@ -418,7 +418,7 @@ export class RoutineManager {
       let changed = false;
       for (const routine of this.routines) {
         if (!routine.enabled || routine.nextRunAt == null || routine.nextRunAt > now) continue;
-        const scheduledFor = routine.nextRunAt;
+        let scheduledFor = routine.nextRunAt;
         const late = now - scheduledFor;
         if (late > CATCH_UP_MS) {
           const missed = this.newRun(routine, scheduledFor, false);
@@ -426,6 +426,17 @@ export class RoutineManager {
           missed.finishedAt = now;
           missed.error = "This computer was offline for more than 12 hours after the scheduled time";
           this.emitRun(missed);
+          // The stored head can be days late while a later slot is still inside
+          // the window (laptop closed across two mornings). Skip the stale middle
+          // without a receipt per day, but do not jump over the one we can still run.
+          if (routine.schedule.type !== "once") {
+            let cursor = nextOccurrence(routine.schedule, scheduledFor);
+            while (cursor != null && now - cursor > CATCH_UP_MS) cursor = nextOccurrence(routine.schedule, cursor);
+            if (cursor != null && cursor <= now) {
+              this.emitRun(this.newRun(routine, cursor, false));
+              scheduledFor = cursor;
+            }
+          }
         } else {
           const run = this.newRun(routine, scheduledFor, false);
           this.emitRun(run);
