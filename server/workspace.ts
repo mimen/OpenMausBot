@@ -11,6 +11,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 
 export const WORKSPACES_DIR = join(DATA_DIR, "workspaces");
@@ -100,7 +101,7 @@ export function readMemoryFile(botId: string) {
  * run a turn, and the write must not depend on that ordering. */
 export function writeMemoryFile(botId: string, text: string): void {
   ensureWorkspace(botId);
-  writeFileSync(join(workspaceDir(botId), "MEMORY.md"), text, { mode: 0o600 });
+  writeFileAtomic(join(workspaceDir(botId), "MEMORY.md"), text, { mode: 0o600 });
 }
 
 // One path segment, starts with a word character, plain characters only,
