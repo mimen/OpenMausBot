@@ -903,7 +903,7 @@ export function ChatView({ bot }: { bot: Bot }) {
         )}
         style={drag}
       >
-        <div className="flex min-w-0 items-center gap-2.5 rounded-lg px-1.5 py-1" style={noDrag}>
+        <div className="flex min-w-11 items-center gap-2.5 rounded-lg px-1.5 py-1" style={noDrag}>
           <button
             onClick={() => dispatch({ type: "toggleSettings" })}
             className="flex shrink-0 items-center rounded-lg p-0.5 hover:bg-raised/50"
@@ -930,7 +930,7 @@ export function ChatView({ bot }: { bot: Bot }) {
           )}
           {bot.busy && <Loader2 size={14} className="animate-spin text-ink-secondary" />}
         </div>
-        <div className="flex items-center gap-2" style={noDrag}>
+        <div className="flex min-w-0 items-center gap-2" style={noDrag}>
           {bot.busy && (
             <button
               onClick={() => dispatch({ type: "interrupt", botId: bot.id })}
@@ -1151,7 +1151,7 @@ function WorkingFolderChip({ bot }: { bot: Bot }) {
   return (
     <button
       onClick={() => dispatch({ type: "toggleSettings", open: true })}
-      className="flex max-w-[180px] items-center gap-1.5 rounded-full border border-hairline/40 bg-raised/60 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink"
+      className="flex min-w-0 max-w-[180px] items-center gap-1.5 rounded-full border border-hairline/40 bg-raised/60 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink"
       title={`Working folder: ${folder}`}
     >
       <Folder size={12} />
