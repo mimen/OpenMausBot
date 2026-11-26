@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -51,6 +51,19 @@ describe("writeFileAtomic", () => {
     writeFileAtomic(p, "new", { mode: 0o600 });
 
     expect(statSync(p).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps an existing file's mode and symlink", () => {
+    const real = join(dir, "real.json");
+    const link = join(dir, "link.json");
+    writeFileAtomic(real, "old", { mode: 0o600 });
+    symlinkSync(real, link);
+
+    writeFileAtomic(link, "new");
+
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readFileSync(real, "utf8")).toBe("new");
+    expect(statSync(real).mode & 0o777).toBe(0o600);
   });
 
   it("cleans up the temporary file when replacement fails", () => {

@@ -6,7 +6,8 @@
 // loadSession:true (session/load resume works), mcpCapabilities http+sse,
 // and a full session/new → session/prompt roundtrip streams
 // agent_thought_chunk + agent_message_chunk and settles with end_turn.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "../../atomic.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -94,7 +95,7 @@ export function ensureKimiInjectAlias(
   }
   if (blocks.length) {
     const prefix = text && !text.endsWith("\n") ? `${text}\n\n` : text ? `${text}\n` : "";
-    writeFileSync(path, `${prefix}${blocks.join("\n")}`);
+    writeFileAtomic(path, `${prefix}${blocks.join("\n")}`);
   }
   return alias;
 }

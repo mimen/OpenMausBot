@@ -1,6 +1,7 @@
 // OpenCode Go subscription/API product through the maintained OpenCode CLI's
 // ACP stdio interface. The generic protocol runtime lives in core.ts.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "../../atomic.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -143,7 +144,7 @@ export function ensureOpenCodeInjectModel(
     models,
   };
   config.provider = providers;
-  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+  writeFileAtomic(path, `${JSON.stringify(config, null, 2)}\n`);
   return native;
 }
 

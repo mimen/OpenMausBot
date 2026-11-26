@@ -15,7 +15,8 @@
 // ~/.factory/settings.json selected. Model and autonomy are session config
 // options set over the wire (session/set_model, session/set_mode), which is
 // why both live in configureSession() below and NOT in spawnArgs.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { writeFileAtomic } from "../../atomic.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -101,7 +102,7 @@ export function ensureDroidInjectModel(
     if (!match.id) {
       match.id = id;
       settings.customModels = custom;
-      writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
+      writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
     }
     return match.id;
   }
@@ -114,7 +115,7 @@ export function ensureDroidInjectModel(
     provider: "generic-chat-completion-api",
   });
   settings.customModels = custom;
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
+  writeFileAtomic(path, `${JSON.stringify(settings, null, 2)}\n`);
   return id;
 }
 
